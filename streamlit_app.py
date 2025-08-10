@@ -222,7 +222,23 @@ def fetch_list(query):
 
 @st.cache_data(ttl=300)
 def fetch_databases(environment):
-    return fetch_list("SHOW DATABASES") if session else []
+    """Fetch databases filtered by environment prefix"""
+    if not session:
+        return []
+    
+    # Filter databases by environment prefix (like DEV_, QA_, UAT_, PROD_)
+    env_prefix = f"{environment}_"
+    db_query = f"""
+        SELECT DATABASE_NAME 
+        FROM INFORMATION_SCHEMA.DATABASES 
+        WHERE DATABASE_NAME LIKE '{env_prefix}%'
+        ORDER BY DATABASE_NAME
+    """
+    try:
+        rows = session.sql(db_query).collect()
+        return [row[0] for row in rows]
+    except:
+        return []
 
 @st.cache_data(ttl=300)
 def fetch_schemas(database_name):
