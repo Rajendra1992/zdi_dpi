@@ -770,7 +770,9 @@ elif page == "📊 Data Ingestion DQ":
         if dq_rule == "DISTINCT COUNT" and selected_db and selected_schema:
             tables = fetch_tables(selected_db, selected_schema)
             selected_table = st.selectbox("📋 Table", tables if tables else ["No tables found"])
-        elif dq_rule != "COUNT VALIDATION":
+        elif dq_rule == "COUNT VALIDATION":
+            load_type_input = st.text_input("⚡ Load Type", "")
+        elif dq_rule in ["DATA VALIDATION", "DUPLICATE VALIDATION"]:
             load_type_input = st.text_input("⚡ Load Type", "")
     
     if col7:  # Only for DISTINCT COUNT
@@ -778,10 +780,6 @@ elif page == "📊 Data Ingestion DQ":
             if selected_db and selected_schema and selected_table:
                 columns = fetch_columns(selected_db, selected_schema, selected_table)
                 selected_column = st.selectbox("📊 Column", columns if columns else ["No columns found"])
-
-    # Load Type input for DISTINCT COUNT (separate row)
-    if dq_rule == "DISTINCT COUNT":
-        load_type_input = st.text_input("⚡ Load Type", "")
 
     # Load Group selection
     load_groups = fetch_load_groups(environment)
@@ -820,7 +818,7 @@ elif page == "📊 Data Ingestion DQ":
                     st.download_button("📥 Download Results", data=csv_data, 
                                      file_name=f"distinct_count_validation_{timestamp}.csv", mime="text/csv")
         else:
-            # Existing validation logic
+            # Existing validation logic - all other rules need Load Type and Load Group
             if not load_type_input.strip():
                 st.error("❌ Please enter a Load Type")
             elif not selected_load_group:
