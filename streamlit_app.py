@@ -51,12 +51,61 @@ st.markdown(
     /* Full screen data editor styles */
     .stDataFrame {
         width: 100% !important;
-        height: 70vh !important;
+        height: 90vh !important;
+        min-height: 90vh !important;
     }
     
     .stDataFrame > div {
         width: 100% !important;
-        height: 70vh !important;
+        height: 90vh !important;
+        min-height: 90vh !important;
+    }
+    
+    /* Make sure the data editor fills the container */
+    div[data-testid="stDataFrame"] {
+        width: 100% !important;
+        height: 90vh !important;
+        min-height: 90vh !important;
+    }
+    
+    div[data-testid="stDataFrame"] > div {
+        width: 100% !important;
+        height: 90vh !important;
+        min-height: 90vh !important;
+    }
+    
+    /* Additional targeting for the data editor component */
+    .stDataFrame div[data-testid="stDataFrameContainer"] {
+        width: 100% !important;
+        height: 90vh !important;
+    }
+    
+    /* Override any margin constraints */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+        max-width: none;
+        width: 98vw;
+    }
+    
+    /* Make the data editor container larger */
+    .stContainer {
+        width: 100% !important;
+    }
+    
+    /* Ensure tables use full width */
+    .stDataFrame table {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+    
+    /* Style the data editor to be more prominent */
+    div[data-testid="stDataFrame"] iframe {
+        width: 100% !important;
+        height: 90vh !important;
+        min-height: 90vh !important;
     }
     
     /* Auto-save indicator styles */
@@ -1524,12 +1573,14 @@ if app_mode == "Classifications":
             st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'] = st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'].cat.set_categories(['MASK', 'APPROVED', 'NO MASKING NEEDED'])
 
             # Create the data editor with full screen height and auto-save
-            with st.container():
+            # Use columns to maximize width usage
+            col1, col2, col3 = st.columns([0.02, 0.96, 0.02])
+            with col2:
                 edited_df = st.data_editor(
                     st.session_state.edited_df, 
                     num_rows="dynamic", 
                     use_container_width=True,
-                    height=600,  # Fixed height for better full-screen experience
+                    height=1000,  # Maximum height for better full-screen experience
                     key=f"data_editor_{st.session_state.auto_save_key}"
                 )
 
