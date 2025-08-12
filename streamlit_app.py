@@ -1,957 +1,797 @@
 import streamlit as st
-from snowflake.snowpark import Session
 from snowflake.snowpark.context import get_active_session
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime
 import time
 
-# Page configuration
-st.set_page_config(
-    page_title="ZDQ - Data Quality Hub",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# Custom CSS for styling
+st.markdown(
+    """
+    <style>
+    body {
+        background-color: #F0F4F8; /* Soft Light Blue background */
+    }
+
+    .font {
+        font-size: 34px;
+        font-family: 'Helvetica Neue', sans-serif;
+        color: #34495E; /* Dark Slate Gray */
+        text-transform: uppercase; /* Make text uppercase */
+    }
+
+    .sidebar .sidebar-content {
+        background-color: #BDC3C7; /* Light Gray */
+        color: #2C3E50; /* Dark Gray */
+    }
+
+    /* Styling for the buttons */
+    .stButton button {
+        background-color: #2980B9; /* Ocean Blue */
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        font-size: 16px;
+        margin: 5px 0; /* Add some space between the buttons */
+        border: none; /* Remove button border */
+    }
+
+    .stButton button:hover {
+        background-color: #1A6695; /* Darker Blue on hover */
+    }
+
+    /* Styling for text and headers */
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+        color: #2C3E50; /* Dark text color for headers */
+    }
+
+    /* Additional styles if necessary */
+    .stMarkdown p {
+        color: #34495E; /* Text color for paragraph */
+    }
+
+    /* Full screen data editor styles */
+    .stDataFrame {
+        width: 100% !important;
+        height: 70vh !important;
+    }
+    
+    .stDataFrame > div {
+        width: 100% !important;
+        height: 70vh !important;
+    }
+    
+    /* Auto-save indicator styles */
+    .auto-save-status {
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background-color: #28a745;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        z-index: 1000;
+        opacity: 0.9;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: 700;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-        background: linear-gradient(90deg, #1f77b4, #ff7f0e);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    
-    .sub-header {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #2c3e50;
-        margin-bottom: 1rem;
-        border-left: 4px solid #3498db;
-        padding-left: 1rem;
-    }
-    
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
-        color: white;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-        text-align: center;
-        margin: 1rem 0;
-    }
-    
-    .success-card {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin: 0.5rem 0;
-        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
-    }
-    
-    .failure-card {
-        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin: 0.5rem 0;
-        box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
-    }
-    
-    .info-box {
-        background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
-        padding: 1.5rem;
-        border-radius: 15px;
-        color: white;
-        margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    
-    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    .stSelectbox > div > div {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-    }
-    
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 0.75rem 2rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-    }
-    
-    .nav-card {
-        background: white;
-        padding: 2rem;
-        border-radius: 15px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-        border-left: 4px solid #3498db;
-        margin: 1rem 0;
-        transition: transform 0.3s ease;
-    }
-    
-    .nav-card:hover {
-        transform: translateY(-5px);
-    }
-    
-    /* Enhanced table styling with Brazilian colors */
-    .dataframe {
-        border-collapse: collapse;
-        margin: 1rem 0;
-        font-size: 0.9rem;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    
-    .dataframe th {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        font-weight: 600;
-        padding: 1rem;
-        text-align: center;
-        border: none;
-    }
-    
-    .dataframe td {
-        padding: 0.8rem;
-        text-align: center;
-        border-bottom: 1px solid #e9ecef;
-    }
-    
-    /* Brazilian light colors for alternating rows */
-    .dataframe tbody tr:nth-child(odd) {
-        background-color: #fff8e1; /* Light warm yellow */
-    }
-    
-    .dataframe tbody tr:nth-child(even) {
-        background-color: #e8f5e8; /* Light green */
-    }
-    
-    .dataframe tbody tr:hover {
-        background-color: #e3f2fd; /* Light blue on hover */
-        transform: scale(1.02);
-        transition: all 0.3s ease;
-    }
-    
-    /* Status-specific styling */
-    .status-success {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-        color: white !important;
-        font-weight: bold !important;
-        border-radius: 20px !important;
-        padding: 0.5rem 1rem !important;
-        margin: 0.2rem !important;
-        box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3) !important;
-    }
-    
-    .status-failure {
-        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%) !important;
-        color: white !important;
-        font-weight: bold !important;
-        border-radius: 20px !important;
-        padding: 0.5rem 1rem !important;
-        margin: 0.2rem !important;
-        box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3) !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Initialize Snowflake session
-@st.cache_resource
-def init_snowflake_session():
+# Function to log actions to the specified audit table
+def log_audit(action, status, audit_type):
+    """Log an action to the specified audit table."""
     try:
         session = get_active_session()
-        return session, True
-    except:
-        return None, False
+        current_user = session.get_current_user().replace('"', '')
+        current_role = session.get_current_role().replace('"', '')
 
-session, session_connected = init_snowflake_session()
-
-if not session_connected:
-    st.error("❌ Could not establish Snowflake connection. Please ensure you're properly connected.")
-    st.stop()
-
-# Environment to database mapping
-ENV_DB_MAP = {
-    "DEV": "dev_db_manager",
-    "QA": "qa_db_manager", 
-    "UAT": "uat_db_manager",
-    "PROD": "prod_db_manager"
-}
-
-# Sidebar navigation with icons
-st.sidebar.markdown("### ZDQ ")
-page = st.sidebar.radio(
-    "Choose your validation process:",
-    ["🏠 Home", "📊 Data Ingestion DQ", "🎭 Masking DQ", "🔐 Encryption DQ"],
-    label_visibility="collapsed"
-)
-
-# Data fetching functions with caching
-@st.cache_data(ttl=300)
-def fetch_list(query):
-    if session:
-        try:
-            return [row['name'] for row in session.sql(query).collect()]
-        except:
-            return []
-    return []
-
-@st.cache_data(ttl=300)
-def fetch_databases(environment):
-    return fetch_list("SHOW DATABASES") if session else []
-
-@st.cache_data(ttl=300)
-def fetch_schemas(database_name):
-    return fetch_list(f"SHOW SCHEMAS IN DATABASE {database_name}") if session else []
-
-@st.cache_data(ttl=300)
-def fetch_source_db_types(environment):
-    db_name = ENV_DB_MAP.get(environment)
-    if not db_name: return []
-    query = f"SELECT DISTINCT db_type FROM {db_name}.public.audit_recon WHERE db_type IS NOT NULL"
-    try:
-        return [row['DB_TYPE'] for row in session.sql(query).collect()] if session else []
-    except:
-        return []
-
-@st.cache_data(ttl=300)
-def fetch_load_groups(environment):
-    db_name = ENV_DB_MAP.get(environment)
-    if not db_name: return []
-    query = f"SELECT DISTINCT LOAD_GROUP FROM {db_name}.public.audit_recon"
-    try:
-        return [row['LOAD_GROUP'] for row in session.sql(query).collect()] if session else []
-    except:
-        return []
-
-@st.cache_data(ttl=300)
-def fetch_tables(database, schema):
-    """Fetch tables from a specific database and schema"""
-    if not database or not schema: return []
-    query = f"""
-        SELECT TABLE_NAME 
-        FROM {database}.INFORMATION_SCHEMA.TABLES 
-        WHERE TABLE_SCHEMA = '{schema}' 
-        AND TABLE_TYPE = 'BASE TABLE'
-        ORDER BY TABLE_NAME
-    """
-    try:
-        return [row['TABLE_NAME'] for row in session.sql(query).collect()] if session else []
-    except:
-        return []
-
-@st.cache_data(ttl=300)
-def fetch_columns(database, schema, table):
-    """Fetch columns from a specific table"""
-    if not database or not schema or not table: return []
-    query = f"""
-        SELECT COLUMN_NAME 
-        FROM {database}.INFORMATION_SCHEMA.COLUMNS 
-        WHERE TABLE_SCHEMA = '{schema}' 
-        AND TABLE_NAME = '{table}'
-        ORDER BY ORDINAL_POSITION
-    """
-    try:
-        return [row['COLUMN_NAME'] for row in session.sql(query).collect()] if session else []
-    except:
-        return []
-
-def get_source_target_tables(load_group, load_type, source_db_type, environment):
-    db_name = ENV_DB_MAP.get(environment)
-    if not db_name: return [], []
-
-    query_template = lambda db_type: f"""
-        SELECT upper(table_name) as table_name, row_count FROM {db_name}.public.audit_recon
-        WHERE LOAD_GROUP IN ('{load_group}') AND LOAD_TYPE IN ('{load_type}') AND db_type = '{db_type}'
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY TABLE_NAME ORDER BY ROW_CRE_DT) = 1
-    """
-
-    try:
-        source_result = session.sql(query_template(source_db_type)).collect() if session else []
-        target_result = session.sql(query_template('SNOWFLAKE')).collect() if session else []
-
-        source_tables = [{'table_name': r['TABLE_NAME'], 'row_count': r['ROW_COUNT']} for r in source_result]
-        target_tables = [{'table_name': r['TABLE_NAME'], 'row_count': r['ROW_COUNT']} for r in target_result]
-
-        source_tables.sort(key=lambda x: x['table_name'])
-        target_tables.sort(key=lambda x: x['table_name'])
-
-        return source_tables, target_tables
-    except Exception as e:
-        st.error(f"Error fetching tables: {e}")
-        return [], []
-
-def run_count_validation(selected_load_group, load_type, source_db_type, environment):
-    with st.spinner("🔄 Running count validation..."):
-        s_list, t_list = get_source_target_tables(selected_load_group, load_type, source_db_type, environment)
-        max_len = max(len(s_list), len(t_list))
-        rows = []
-
-        for i in range(max_len):
-            s = s_list[i] if i < len(s_list) else {'table_name': 'N/A', 'row_count': 0}
-            t = t_list[i] if i < len(t_list) else {'table_name': 'N/A', 'row_count': 0}
-            test_result = "SUCCESS" if s['row_count'] == t['row_count'] else "FAILURE"
-
-            detail_msg = ""
-            if test_result == "FAILURE":
-                if s['row_count'] > t['row_count']:
-                    detail_msg = "Source count is greater than target count"
-                elif t['row_count'] > s['row_count']:
-                    detail_msg = "Target count is greater than source count"
-
-            rows.append({
-                "Load Type": load_type,
-                "Load Group": selected_load_group,
-                "Environment": environment,
-                "SOURCE_TABLE": s['table_name'],
-                "SOURCE_ROWS": s['row_count'],
-                "TARGET_TABLE": t['table_name'],
-                "TARGET_ROWS": t['row_count'],
-                "Test Case": test_result,
-                "Details": detail_msg
-            })
-
-        df = pd.DataFrame(rows)
-        return df
-
-def run_data_validation(selected_db, selected_schema, load_type, selected_load_group, environment):
-    with st.spinner("🔄 Running data validation..."):
-        query_tables = f"""
-            SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME
-            FROM {selected_db}.INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = '{selected_schema}'
-            AND TABLE_NAME IN (
-                SELECT DISTINCT UPPER(TABLE_NAME)
-                FROM {ENV_DB_MAP[environment]}.public.audit_recon
-                WHERE LOAD_GROUP IN ('{selected_load_group}')
-                AND LOAD_TYPE IN ('{load_type}')
+        if audit_type == "masking":
+            audit_sql = f"""
+            INSERT INTO PROD_DB_MANAGER.PUBLIC.MASKING_AUDIT (
+                ACTIVITY, 
+                ACTIVITY_STATUS, 
+                ROLE, 
+                "USER_NAME", 
+                ROW_CREATE_DATE, 
+                ROW_MOD_DATE
             )
-            AND COLUMN_NAME NOT LIKE 'ROW_%'
-            AND COLUMN_NAME NOT LIKE 'RAW_%'
-        """
-
-        try:
-            tables_df = session.sql(query_tables).to_pandas()
-            if tables_df.empty:
-                st.info("ℹ️ No tables found for the given criteria.")
-                return pd.DataFrame([])
-
-            results = []
-            env_datalake_map = {
-                "DEV": "dev_datalake",
-                "QA": "qa_datalake",
-                "UAT": "uat_datalake",
-                "PROD": "prod_datalake"
-            }
-
-            progress_bar = st.progress(0)
-            for idx, (_, row) in enumerate(tables_df.iterrows()):
-                schema_name = row['TABLE_SCHEMA']
-                table_name = row['TABLE_NAME']
-                
-                progress_bar.progress((idx + 1) / len(tables_df))
-
-                source_db_name = env_datalake_map.get(selected_db, f"{selected_db}_RAW")
-
-                try:
-                    # Target vs View
-                    target_vs_view_query = f"""
-                        SELECT COUNT(*) AS DIFF_COUNT FROM (
-                            SELECT * EXCLUDE (ROW_CRE_DT, ROW_MOD_DT, ROW_CRE_USR_ID, ROW_MOD_USR_ID, RAW_ROW_CRE_DT)
-                            FROM {selected_db}.{schema_name}.{table_name}
-                            MINUS
-                            SELECT DISTINCT * EXCLUDE (RAW_ROW_CRE_DT)
-                            FROM {source_db_name}.{schema_name}.VW_RAW_{table_name}
-                        )
-                    """
-                    t2v_result = session.sql(target_vs_view_query).collect()
-                    t2v_diff = t2v_result[0]['DIFF_COUNT'] if t2v_result else 0
-
-                    # View vs Target
-                    view_vs_target_query = f"""
-                        SELECT COUNT(*) AS DIFF_COUNT FROM (
-                            SELECT DISTINCT * EXCLUDE (RAW_ROW_CRE_DT)
-                            FROM {source_db_name}.{schema_name}.VW_RAW_{table_name}
-                            MINUS
-                            SELECT * EXCLUDE (ROW_CRE_DT, ROW_MOD_DT, ROW_CRE_USR_ID, ROW_MOD_USR_ID, RAW_ROW_CRE_DT)
-                            FROM {selected_db}.{schema_name}.{table_name}
-                        )
-                    """
-                    v2t_result = session.sql(view_vs_target_query).collect()
-                    v2t_diff = v2t_result[0]['DIFF_COUNT'] if v2t_result else 0
-
-                except Exception as e:
-                    st.warning(f"⚠️ Error comparing {schema_name}.{table_name}: {e}")
-                    t2v_diff = v2t_diff = -1
-
-                test_case_result = "SUCCESS" if t2v_diff == 0 and v2t_diff == 0 else "FAILURE"
-
-                results.append({
-                    "Load Type": load_type,
-                    "Load Group": selected_load_group,
-                    "Environment": environment,
-                    "Database": selected_db,
-                    "Schema": schema_name,
-                    "Table": table_name,
-                    "TARGET VS VIEW": t2v_diff,
-                    "VIEW VS TARGET": v2t_diff,
-                    "Test Case": test_case_result
-                })
-
-            progress_bar.empty()
-            return pd.DataFrame(results)
-        except Exception as e:
-            st.error(f"❌ Error during data validation: {e}")
-            return pd.DataFrame([])
-
-def run_duplicate_validation(selected_db, selected_schema, load_type, selected_load_group, environment):
-    with st.spinner("🔄 Running duplicate validation..."):
-        query_tables = f"""
-            SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME
-            FROM {selected_db}.INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = '{selected_schema}'
-            AND TABLE_NAME IN (
-                SELECT DISTINCT UPPER(TABLE_NAME)
-                FROM {ENV_DB_MAP[environment]}.public.audit_recon
-                WHERE LOAD_GROUP IN ('{selected_load_group}')
-                AND LOAD_TYPE IN ('{load_type}')
-            )
-            AND COLUMN_NAME NOT LIKE 'ROW_%'
-            AND COLUMN_NAME NOT LIKE 'RAW_%'
-        """
-
-        try:
-            tables_df = session.sql(query_tables).to_pandas()
-            if tables_df.empty:
-                st.info("ℹ️ No tables found for the given criteria.")
-                return pd.DataFrame([])
-
-            results = []
-            progress_bar = st.progress(0)
-
-            for idx, (_, row) in enumerate(tables_df.iterrows()):
-                schema_name = row['TABLE_SCHEMA']
-                table_name = row['TABLE_NAME']
-                
-                progress_bar.progress((idx + 1) / len(tables_df))
-
-                try:
-                    dup_query = f"""
-                        SELECT COUNT(*) AS DUP_COUNT FROM (
-                            SELECT * EXCLUDE (ROW_CRE_DT, ROW_MOD_DT, ROW_CRE_USR_ID, ROW_MOD_USR_ID, RAW_ROW_CRE_DT)
-                            FROM {selected_db}.{schema_name}.{table_name}
-                            GROUP BY ALL
-                            HAVING COUNT(*) > 1
-                        )
-                    """
-                    result = session.sql(dup_query).collect()
-                    dup_count = result[0]['DUP_COUNT'] if result else 0
-                    test_case_result = "SUCCESS" if dup_count == 0 else "FAILURE"
-                except Exception as e:
-                    st.warning(f"⚠️ Error checking duplicates in {schema_name}.{table_name}: {e}")
-                    dup_count = -1
-                    test_case_result = "FAILURE"
-
-                results.append({
-                    "Load Type": load_type,
-                    "Load Group": selected_load_group,
-                    "Environment": environment,
-                    "Database": selected_db,
-                    "Schema": schema_name,
-                    "Table": table_name,
-                    "DUP COUNT": dup_count,
-                    "Test Case": test_case_result
-                })
-
-            progress_bar.empty()
-            return pd.DataFrame(results)
-        except Exception as e:
-            st.error(f"❌ Error during duplicate validation: {e}")
-            return pd.DataFrame([])
-
-def run_distinct_count_validation(selected_db, selected_schema, selected_table, selected_column, environment):
-    """Run distinct count validation for a specific column"""
-    with st.spinner("🔄 Running distinct count validation..."):
-        try:
-            # Get distinct count
-            distinct_query = f"""
-                SELECT COUNT(DISTINCT {selected_column}) AS DISTINCT_COUNT,
-                       COUNT({selected_column}) AS TOTAL_COUNT,
-                       COUNT(*) AS TOTAL_ROWS
-                FROM {selected_db}.{selected_schema}.{selected_table}
+            VALUES (
+                '{action}',
+                '{status}', 
+                '{current_role}',
+                '{current_user}',
+                CURRENT_TIMESTAMP(),
+                CURRENT_TIMESTAMP()
+            );
             """
-            
-            result = session.sql(distinct_query).collect()
-            
-            if result:
-                distinct_count = result[0]['DISTINCT_COUNT']
-                total_count = result[0]['TOTAL_COUNT']
-                total_rows = result[0]['TOTAL_ROWS']
-                null_count = total_rows - total_count
-                
-                # Calculate uniqueness percentage
-                uniqueness_pct = (distinct_count / total_count * 100) if total_count > 0 else 0
-                
-                # Determine test case result based on uniqueness
-                # You can adjust these thresholds based on your requirements
-                if uniqueness_pct == 100:
-                    test_case = "SUCCESS"
-                    details = "All values are unique"
-                elif uniqueness_pct >= 90:
-                    test_case = "SUCCESS"
-                    details = f"High uniqueness: {uniqueness_pct:.2f}%"
-                elif uniqueness_pct >= 50:
-                    test_case = "SUCCESS"
-                    details = f"Moderate uniqueness: {uniqueness_pct:.2f}%"
-                else:
-                    test_case = "FAILURE"
-                    details = f"Low uniqueness: {uniqueness_pct:.2f}%"
-                
-                result_data = {
-                    "Environment": environment,
-                    "Database": selected_db,
-                    "Schema": selected_schema,
-                    "Table": selected_table,
-                    "Column": selected_column,
-                    "Total Rows": total_rows,
-                    "Non-Null Count": total_count,
-                    "Null Count": null_count,
-                    "Distinct Count": distinct_count,
-                    "Uniqueness %": f"{uniqueness_pct:.2f}%",
-                    "Test Case": test_case,
-                    "Details": details
-                }
-                
-                return pd.DataFrame([result_data])
-            else:
-                st.error("❌ No data returned from query")
-                return pd.DataFrame([])
-                
-        except Exception as e:
-            st.error(f"❌ Error during distinct count validation: {e}")
-            error_data = {
-                "Environment": environment,
-                "Database": selected_db,
-                "Schema": selected_schema,
-                "Table": selected_table,
-                "Column": selected_column,
-                "Total Rows": 0,
-                "Non-Null Count": 0,
-                "Null Count": 0,
-                "Distinct Count": 0,
-                "Uniqueness %": "0.00%",
-                "Test Case": "FAILURE",
-                "Details": f"Error: {str(e)}"
-            }
-            return pd.DataFrame([error_data])
+        elif audit_type == "synthetic":
+            audit_sql = f"""
+            INSERT INTO PROD_DB_MANAGER.PUBLIC.SYNTHETIC_AUDIT (
+                ACTIVITY, 
+                ACTIVITY_STATUS, 
+                ROLE, 
+                "USER_NAME", 
+                ROW_CREATE_DATE, 
+                ROW_MOD_DATE
+            )
+            VALUES (
+                '{action}',
+                '{status}', 
+                '{current_role}',
+                '{current_user}',
+                CURRENT_TIMESTAMP(),
+                CURRENT_TIMESTAMP()
+            );
+            """
+        elif audit_type == "encryption":
+            audit_sql = f"""
+            INSERT INTO PROD_DB_MANAGER.PUBLIC.ENCRYPTION_AUDIT (
+                ACTIVITY, 
+                ACTIVITY_STATUS, 
+                ROLE, 
+                "USER_NAME", 
+                ROW_CREATE_DATE, 
+                ROW_MOD_DATE
+            )
+            VALUES (
+                '{action}',
+                '{status}', 
+                '{current_role}',
+                '{current_user}',
+                CURRENT_TIMESTAMP(),
+                CURRENT_TIMESTAMP()
+            );
+            """
 
-def style_dataframe(df):
-    """Apply beautiful styling to dataframes with Brazilian colors and enhanced status styling"""
-    def highlight_test_case(val):
-        if val == "SUCCESS":
-            return 'background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: green; font-weight: bold; border-radius: 20px; padding: 0.5rem 1rem; text-align: center; box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);'
-        elif val == "FAILURE":
-            return 'background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%); color: red; font-weight: bold; border-radius: 20px; padding: 0.5rem 1rem; text-align: center; box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);'
-        return ''
-    
-    def highlight_rows(row):
-        # Brazilian-inspired alternating colors
-        colors = ['background-color: #fff8e1;', 'background-color: #e8f5e8;']  # Light warm yellow and light green
-        return [colors[row.name % 2]] * len(row)
-    
-    if 'Test Case' in df.columns:
-        styled = df.style.apply(highlight_rows, axis=1).applymap(highlight_test_case, subset=['Test Case'])
-        return styled.set_table_styles([
-            {'selector': 'th', 'props': [
-                ('background', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
-                ('color', 'white'),
-                ('font-weight', 'bold'),
-                ('text-align', 'center'),
-                ('padding', '1rem'),
-                ('border', 'none')
-            ]},
-            {'selector': 'td', 'props': [
-                ('text-align', 'center'),
-                ('padding', '0.8rem'),
-                ('border-bottom', '1px solid #e9ecef')
-            ]},
-            {'selector': 'table', 'props': [
-                ('border-collapse', 'collapse'),
-                ('border-radius', '10px'),
-                ('overflow', 'hidden'),
-                ('box-shadow', '0 4px 15px rgba(0,0,0,0.1)')
-            ]}
-        ])
-    else:
-        return df.style.apply(highlight_rows, axis=1).set_table_styles([
-            {'selector': 'th', 'props': [
-                ('background', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
-                ('color', 'white'),
-                ('font-weight', 'bold'),
-                ('text-align', 'center'),
-                ('padding', '1rem'),
-                ('border', 'none')
-            ]},
-            {'selector': 'td', 'props': [
-                ('text-align', 'center'),
-                ('padding', '0.8rem'),
-                ('border-bottom', '1px solid #e9ecef')
-            ]},
-            {'selector': 'table', 'props': [
-                ('border-collapse', 'collapse'),
-                ('border-radius', '10px'),
-                ('overflow', 'hidden'),
-                ('box-shadow', '0 4px 15px rgba(0,0,0,0.1)')
-            ]}
-        ])
+        session.sql(audit_sql).collect()
+    except Exception as e:
+        st.error(f"❌ Error logging to audit: {str(e)}", icon="🚨")
 
-def display_summary_metrics(df):
-    """Display summary metrics with beautiful cards"""
-    if df.empty:
-        return
-    
-    total_tests = len(df)
-    success_count = len(df[df['Test Case'] == 'SUCCESS']) if 'Test Case' in df.columns else 0
-    failure_count = total_tests - success_count
-    success_rate = (success_count / total_tests * 100) if total_tests > 0 else 0
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>📊 Total Tests</h3>
-            <h2>{total_tests}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="success-card">
-            <h3>✅ Passed</h3>
-            <h2>{success_count}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class="failure-card">
-            <h3>❌ Failed</h3>
-            <h2>{failure_count}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>🎯 Success Rate</h3>
-            <h2>{success_rate:.1f}%</h2>
-        </div>
-        """, unsafe_allow_html=True)
+# Main app title
+st.sidebar.title("ZDC APP")
+app_mode = st.sidebar.radio("Select a function:", 
+                             ["Home", 
+                              "Synthetic Data Generation", 
+                              "Snowflake Masking",
+                              "Snowflake Encryption",                              
+                              "Classifications"])
 
-# Initialize session state
-if 'load_group' not in st.session_state:
-    st.session_state['load_group'] = None
+# Home Page for the Data Governance App
+if app_mode == "Home":
+    st.markdown('<h1 class="font">WELCOME TO THE ZDC APP</h1>', unsafe_allow_html=True)
+    st.markdown("""
+    <p>This application enables users to perform data masking on Snowflake schemas, generate synthetic data for specified schemas, encryption and validate the applied masking.</p>
+    <p>Please select a process from the sidebar to generate synthetic data, perform data masking, encryption or validate masking.</p>
+    """, unsafe_allow_html=True)
 
-# Main application logic
-if page == "🏠 Home":
-    st.markdown('<h1 class="main-header">Welcome to ZDQ Hub</h1>', unsafe_allow_html=True)
-    
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
+# Synthetic Data Generation App
+elif app_mode == "Synthetic Data Generation":
+    st.sidebar.subheader("Synthetic Data Generation Process")
+    data_gen_mode = st.sidebar.radio("Select a process:", ["Home", "Data Generation"])
+
+    if data_gen_mode == "Home":
+        st.markdown('<h1 class="font">Synthetic Data Generation Process</h1>', unsafe_allow_html=True)
         st.markdown("""
-        <div class="nav-card">
-            <h3>📊 Data Ingestion DQ</h3>
-            <p>Validate data ingestion processes including count validation, data integrity checks, and duplicate detection.</p>
-            <ul>
-                <li>✅ Count Validation</li>
-                <li>🔍 Data Validation</li>
-                <li>🔄 Duplicate Detection</li>
-                <li>📈 Distinct Count Validation</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class="nav-card">
-            <h3>🎭 Masking DQ</h3>
-            <p>Ensure data masking compliance and validate masked data integrity across environments.</p>
-            <ul>
-                <li>🏷️ Tag Validation</li>
-                <li>📋 Table Validation</li>
-                <li>📊 Column Validation</li>
-                <li>👁️ View Validation</li>
-                <li>🔍 Classification Validation</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class="nav-card">
-            <h3>🔐 Encryption DQ</h3>
-            <p>Validate encryption processes and ensure data security compliance.</p>
-            <ul>
-                <li>🔒 Table Validation</li>
-                <li>🔑 Column Encryption validation</li
-                <li>🔍 Tags Comparision with source and target</li
-            </ul>
-        </div>
+        <p>This application is designed to generate synthetic data based on the selected source and target schemas, as well as the selected tables within your Snowflake environment.</p>
+        <p>Users can choose a source database and schema from which to extract data and specify a target database and schema where the synthetic data will be stored. If users want to generate synthetic data for specific tables within a schema, they can select only those tables, and the system will generate data accordingly. You need to select either schema-level or table-level synthetic data generation and then proceed by clicking the appropriate button to start the process.</p>
+        <p>The generated synthetic data maintains the structure of the source data without compromising any sensitive information.</p>
+        <p>To generate synthetic data, each input table or view must meet specific requirements and the following guidelines apply:</p>
+        <ul>
+            <li>Each input table or view must have a minimum of 20 distinct rows.</li>
+            <li>Each input table or view is limited to a maximum of 100 columns.</li>
+            <li>The maximum row limit for each input table or view is 14 million rows.</li>
+        </ul>
+        <p>The following input table types are supported:</p>
+        <ul>
+            <li>Regular, temporary, dynamic, and transient tables.</li>
+            <li>Regular, materialized, secure, and secure materialized views.</li>
+        </ul>
+        <p>However, the following input table types are not supported:</p>
+        <ul>
+            <li>External, Apache Iceberg™, and hybrid tables.</li>
+            <li>Streams.</li>
+        </ul>
         """, unsafe_allow_html=True)
 
-elif page == "📊 Data Ingestion DQ":
-    st.markdown('<h1 class="main-header">📊 Data Ingestion Quality</h1>', unsafe_allow_html=True)
-    
-    # Control panel    
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        environment = st.selectbox("🌍 Environment", ["DEV", "QA", "UAT", "PROD"])
-    with col2:
-        rules = ["COUNT VALIDATION", "DATA VALIDATION", "DUPLICATE VALIDATION", "DISTINCT COUNT"]
-        dq_rule = st.selectbox("📋 Validation Rule", rules)
-    with col3:
-        if dq_rule != "DISTINCT COUNT":
-            source_db_types = fetch_source_db_types(environment)
-            source_db_type = st.selectbox("🗄️ Source DB Type", source_db_types if source_db_types else ["No db_type found"])
-        else:
-            source_db_type = None
+    elif data_gen_mode == "Data Generation":
+        st.markdown('<h1 class="font">Synthetic Data Generation</h1>', unsafe_allow_html=True)
+        session = get_active_session()
 
-    # Database and schema selection (always shown except for COUNT VALIDATION)
-    databases = fetch_databases(environment) if dq_rule != "COUNT VALIDATION" else []
-    selected_db = ""
-    selected_schema = ""
-    selected_table = ""
-    selected_column = ""
-
-    # Row 2: Database, Schema, and conditionally Table/Column for DISTINCT COUNT
-    if dq_rule == "DISTINCT COUNT":
-        col4, col5, col6, col7 = st.columns([1, 1, 1, 1])
-    else:
-        col4, col5, col6 = st.columns([1.2, 1, 1])
-        col7 = None
-
-    with col4:
-        if dq_rule != "COUNT VALIDATION":
-            selected_db = st.selectbox("🏢 Database", databases if databases else ["No databases found"])
-    
-    with col5:
-        if dq_rule != "COUNT VALIDATION" and selected_db:
-            schemas = fetch_schemas(selected_db)
-            selected_schema = st.selectbox("📁 Schema", schemas if schemas else ["No schemas found"])
-    
-    with col6:
-        if dq_rule == "DISTINCT COUNT" and selected_db and selected_schema:
-            tables = fetch_tables(selected_db, selected_schema)
-            selected_table = st.selectbox("📋 Table", tables if tables else ["No tables found"])
-        elif dq_rule != "COUNT VALIDATION":
-            load_type_input = st.text_input("⚡ Load Type", "")
-    
-    if col7:  # Only for DISTINCT COUNT
-        with col7:
-            if selected_db and selected_schema and selected_table:
-                columns = fetch_columns(selected_db, selected_schema, selected_table)
-                selected_column = st.selectbox("📊 Column", columns if columns else ["No columns found"])
-
-    # Load Type input for DISTINCT COUNT (separate row)
-    if dq_rule == "DISTINCT COUNT":
-        load_type_input = st.text_input("⚡ Load Type", "")
-
-    # Load Group selection
-    load_groups = fetch_load_groups(environment)
-    if st.session_state['load_group'] is None and load_groups:
-        st.session_state['load_group'] = load_groups[0]
-    
-    if load_groups and dq_rule != "DISTINCT COUNT":
-        selected_load_group = st.selectbox("📦 Load Group", load_groups,
-                                           index=load_groups.index(st.session_state['load_group']) if st.session_state['load_group'] in load_groups else 0)
-        st.session_state['load_group'] = selected_load_group
-    elif dq_rule != "DISTINCT COUNT":
-        st.warning("⚠️ No load groups found for the selected environment.")
-        selected_load_group = None
-    else:
-        selected_load_group = None  # Not needed for DISTINCT COUNT
-
-    # Validation execution
-    if st.button("🚀 Run Validation", type="primary"):
-        if dq_rule == "DISTINCT COUNT":
-            # Validation for DISTINCT COUNT
-            if not all([selected_db, selected_schema, selected_table, selected_column]):
-                st.error("❌ Please select Database, Schema, Table, and Column for distinct count validation")
+        # Functions to fetch databases, schemas, and tables
+        def get_databases(env_prefix=None):
+            if env_prefix:
+                db_query = f"""
+                SELECT DATABASE_NAME 
+                FROM INFORMATION_SCHEMA.DATABASES 
+                WHERE DATABASE_NAME LIKE '{env_prefix}%' AND DATABASE_NAME NOT LIKE '%_MASKED%' AND DATABASE_NAME NOT LIKE '%_ENCRYPT%'
+                """
             else:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                df = run_distinct_count_validation(selected_db, selected_schema, selected_table, selected_column, environment)
-                
-                if not df.empty:
-                    st.markdown('<h3 class="sub-header">📈 Distinct Count Validation Results</h3>', unsafe_allow_html=True)
-                    display_summary_metrics(df)
-                    
-                    st.markdown("### 📋 Detailed Results")
-                    styled_df = style_dataframe(df)
-                    st.dataframe(styled_df, use_container_width=True)
-                    
-                    csv_data = df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download Results", data=csv_data, 
-                                     file_name=f"distinct_count_validation_{timestamp}.csv", mime="text/csv")
-        else:
-            # Existing validation logic
-            if not load_type_input.strip():
-                st.error("❌ Please enter a Load Type")
-            elif not selected_load_group:
-                st.error("❌ Please select a Load Group")
-            else:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                if dq_rule == "COUNT VALIDATION":
-                    df = run_count_validation(selected_load_group, load_type_input.strip(), source_db_type, environment)
-                    if not df.empty:
-                        st.markdown('<h3 class="sub-header">📈 Validation Results</h3>', unsafe_allow_html=True)
-                        display_summary_metrics(df)
-                        
-                        st.markdown("### 📋 Detailed Results")
-                        styled_df = style_dataframe(df)
-                        st.dataframe(styled_df, use_container_width=True)
-                        
-                        csv_data = df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Results", data=csv_data, 
-                                         file_name=f"count_validation_{timestamp}.csv", mime="text/csv")
-                    
-                elif dq_rule == "DATA VALIDATION":
-                    if not selected_schema:
-                        st.error("❌ Please select a schema.")
-                    else:
-                        df = run_data_validation(selected_db, selected_schema, load_type_input.strip(), selected_load_group, environment)
-                        if not df.empty:
-                            st.markdown('<h3 class="sub-header">📈 Validation Results</h3>', unsafe_allow_html=True)
-                            display_summary_metrics(df)
-                            
-                            st.markdown("### 📋 Detailed Results")
-                            styled_df = style_dataframe(df)
-                            st.dataframe(styled_df, use_container_width=True)
-                            
-                            csv_data = df.to_csv(index=False).encode('utf-8')
-                            st.download_button("📥 Download Results", data=csv_data,
-                                             file_name=f"data_validation_{timestamp}.csv", mime="text/csv")
-                    
-                elif dq_rule == "DUPLICATE VALIDATION":
-                    if not selected_schema:
-                        st.error("❌ Please select a schema.")
-                    else:
-                        df = run_duplicate_validation(selected_db, selected_schema, load_type_input.strip(), selected_load_group, environment)
-                        if not df.empty:
-                            st.markdown('<h3 class="sub-header">📈 Validation Results</h3>', unsafe_allow_html=True)
-                            display_summary_metrics(df)
-                            
-                            st.markdown("### 📋 Detailed Results")
-                            styled_df = style_dataframe(df)
-                            st.dataframe(styled_df, use_container_width=True)
-                            
-                            csv_data = df.to_csv(index=False).encode('utf-8')
-                            st.download_button("📥 Download Results", data=csv_data,
-                                             file_name=f"duplicate_validation_{timestamp}.csv", mime="text/csv")
-
-elif page == "🎭 Masking DQ":
-    st.markdown('<h1 class="main-header">Data Masking Quality</h1>', unsafe_allow_html=True)
-    
-    # Masking DQ functions
-    @st.cache_data(ttl=300)
-    def get_databases(env_prefix):
-        db_prefix = f"{env_prefix}_"
-        db_query = f"""
-            SELECT DATABASE_NAME 
-            FROM INFORMATION_SCHEMA.DATABASES 
-            WHERE DATABASE_NAME LIKE '{db_prefix}%'
-        """
-        try:
+                db_query = """
+                SELECT DATABASE_NAME 
+                FROM INFORMATION_SCHEMA.DATABASES
+                """
             rows = session.sql(db_query).collect()
             return [row[0] for row in rows]
-        except:
-            return []
 
-    @st.cache_data(ttl=300)
-    def get_schemas(database):
-        schema_query = f"SELECT SCHEMA_NAME FROM {database}.INFORMATION_SCHEMA.SCHEMATA"
-        try:
+        def get_schemas(database):
+            schema_query = f"SELECT SCHEMA_NAME FROM {database}.INFORMATION_SCHEMA.SCHEMATA"
             rows = session.sql(schema_query).collect()
             return [row[0] for row in rows]
-        except:
-            return []
 
-    @st.cache_data(ttl=300)
-    def get_classification_owners(env):
-        """Get classification owners for masking validation"""
-        owner_query = f"""
-            SELECT DISTINCT CLASSIFICATION_OWNER
-            FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
-        """
-        try:
+        def get_tables_for_schema(database, schema):
+            table_query = f"""
+            SELECT TABLE_NAME 
+            FROM {database}.INFORMATION_SCHEMA.TABLES 
+            WHERE TABLE_SCHEMA = '{schema}' AND TABLE_TYPE = 'BASE TABLE'
+            """
+            rows = session.sql(table_query).collect()
+            return [row[0] for row in rows]
+
+        def get_columns_for_table(database, schema, table):
+            columns_query = f"""
+            SELECT COLUMN_NAME 
+            FROM {database}.INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'
+            """
+            rows = session.sql(columns_query).collect()
+            return [row[0] for row in rows]
+
+        # Function to check if a table has sufficient non-null values
+        def has_valid_data(database, schema, table):
+            try:
+                column_query = f"""
+                SELECT COLUMN_NAME 
+                FROM {database}.INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}' 
+                ORDER BY ORDINAL_POSITION LIMIT 1
+                """
+                columns = session.sql(column_query).collect()
+
+                if not columns:
+                    return False
+                
+                first_column = columns[0][0]
+
+                check_query = f"""
+                SELECT COUNT(*) 
+                FROM {database}.{schema}.{table} 
+                WHERE {first_column} IS NOT NULL
+                """
+                result = session.sql(check_query).collect()
+                return result[0][0] > 1  
+
+            except Exception as e:
+                st.error(f"Error checking valid data for {database}.{schema}.{table}: {e}")
+                return False
+
+        # Environment dropdown selection
+        env = st.selectbox("Environment", ["DEV", "QA", "UAT", "PROD"])
+
+        # Get list of source databases based on selected environment
+        database_list_source = get_databases(env)
+
+        # Get all databases for target
+        database_list_target = (
+            get_databases("DEV") +
+            get_databases("QA") +
+            get_databases("UAT") +
+            get_databases("PROD")
+        )
+
+        # Organize inputs for source selection in columns
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            selected_source_database = st.selectbox("Source Database", database_list_source, key="source_database")
+
+        with col2:
+            if selected_source_database:
+                source_schema_list = get_schemas(selected_source_database)
+                selected_source_schema = st.selectbox("Source Schema", source_schema_list, key="source_schema")
+
+        with col3:
+            if selected_source_schema:
+                source_table_list = get_tables_for_schema(selected_source_database, selected_source_schema)
+
+                # Store selected tables and join keys in session state
+                if "selected_tables" not in st.session_state:
+                    st.session_state.selected_tables = []
+                if "join_keys" not in st.session_state:
+                    st.session_state.join_keys = {}
+
+                selected_tables = st.multiselect("Select Source Tables", options=source_table_list, key="source_tables", 
+                                                  default=st.session_state.selected_tables)
+
+                # Update session state for selected tables
+                st.session_state.selected_tables = selected_tables
+
+                for table in selected_tables:
+                    # If this table's join key is not stored in the session state, initialize it to empty list
+                    if table not in st.session_state.join_keys:
+                        st.session_state.join_keys[table] = []
+
+                    # Get column options
+                    columns = get_columns_for_table(selected_source_database, selected_source_schema, table)
+
+                    # Check to ensure default join keys are part of available column options
+                    default_join_keys = [
+                        key for key in st.session_state.join_keys[table] if key in columns
+                    ]
+
+                    # Utilize multiselect for Join Key selection
+                    join_keys = st.multiselect(
+                        f"Join Keys for {table}", 
+                        options=columns, 
+                        default=default_join_keys,  # Only use valid default join keys
+                        key=f"join_keys_{table}"
+                    )
+
+                    # Update the join keys in session state
+                    st.session_state.join_keys[table] = join_keys
+
+        # Organize inputs for target selection in columns
+        col1, col2 = st.columns(2)
+
+        with col1:
+            selected_target_database = st.selectbox("Target Database", database_list_target, key="target_database")
+
+        with col2:
+            if selected_target_database:
+                target_schema_list = get_schemas(selected_target_database)
+                selected_target_schema = st.selectbox("Target Schema", target_schema_list, key="target_schema")
+
+        # Text input for custom target table name
+        target_table_name = st.text_input("Target Table Name", placeholder="Type target table name or leave blank")
+
+        # Automatically set to the first selected table name if left blank
+        default_output_table_names = {table: table for table in selected_tables}  # Store default names for each selected table
+
+        # Buttons for generating synthetic data
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("Generate Synthetic Data for Schema"):
+                # Generate synthetic data for the entire schema
+                try:
+                    tables_with_invalid_data = []
+                    for table in source_table_list:
+                        if not has_valid_data(selected_source_database, selected_source_schema, table):
+                            tables_with_invalid_data.append(table)
+
+                    if tables_with_invalid_data:
+                        st.warning(
+                            f"⚠️ The following tables do not contain sufficient valid data: {', '.join(tables_with_invalid_data)}"
+                        )
+                        log_audit("Synthetic Data Generation failed due to insufficient data.", "FAILED", "synthetic")
+                    else:
+                        # Generate synthetic data for each selected table
+                        for table in selected_tables:
+                            join_keys = st.session_state.join_keys[table]
+                            
+                            if join_keys:  # Check Join Keys list is not empty
+                                for join_key in join_keys:
+                                    sql_command = f"""
+                                    CALL SNOWFLAKE.DATA_PRIVACY.GENERATE_SYNTHETIC_DATA(
+                                        {{
+                                            'datasets': [
+                                                {{
+                                                    'input_table': '{selected_source_database}.{selected_source_schema}.{table}',
+                                                    'output_table': '{selected_target_database}.{selected_target_schema}.{table}',
+                                                    'columns': {{ '{join_key}':{{'join_key': True}} }}
+                                                }}
+                                            ],
+                                            'replace_output_tables': true
+                                        }}
+                                    );
+                                    """
+                                    session.sql(sql_command).collect()
+                            else:
+                                sql_command = f"""
+                                CALL SNOWFLAKE.DATA_PRIVACY.GENERATE_SYNTHETIC_DATA(
+                                    {{
+                                        'datasets': [
+                                            {{
+                                                'input_table': '{selected_source_database}.{selected_source_schema}.{table}',
+                                                'output_table': '{selected_target_database}.{selected_target_schema}.{table}'
+                                            }}
+                                        ],
+                                        'replace_output_tables': true
+                                    }}
+                                );
+                                """
+                                session.sql(sql_command).collect()
+                        
+                        st.success("✅ Synthetic data has been successfully generated for selected tables!", icon="✅")
+                        log_audit("Synthetic Data Generation for schema completed successfully.", "SUCCESS", "synthetic")
+
+                except Exception as e:
+                    st.error(f"❌ Error executing SQL command: {e}", icon="🚨")
+                    log_audit("Synthetic Data Generation for schema encountered an error.", "FAILED", "synthetic")
+
+        with col2:
+            if st.button("Generate Synthetic Data for Tables"):
+                # Generate synthetic data for the selected tables
+                if selected_tables and selected_target_schema:
+                    try:
+                        for table in selected_tables:
+                            output_table_name = default_output_table_names.get(table, table)
+                            join_keys = st.session_state.join_keys[table]
+
+                            if join_keys:  # Check Join Keys list is not empty
+                                for join_key in join_keys:
+                                    sql_command = f"""
+                                    CALL SNOWFLAKE.DATA_PRIVACY.GENERATE_SYNTHETIC_DATA(
+                                        {{
+                                            'datasets': [
+                                                {{
+                                                    'input_table': '{selected_source_database}.{selected_source_schema}.{table}',
+                                                    'output_table': '{selected_target_database}.{selected_target_schema}.{output_table_name}',
+                                                    'columns': {{ '{join_key}':{{'join_key': True}} }}
+                                                }}
+                                            ],
+                                            'replace_output_tables': true
+                                        }}
+                                    );
+                                    """
+                                    session.sql(sql_command).collect()
+                            else:
+                                sql_command = f"""
+                                CALL SNOWFLAKE.DATA_PRIVACY.GENERATE_SYNTHETIC_DATA(
+                                    {{
+                                        'datasets': [
+                                            {{
+                                                'input_table': '{selected_source_database}.{selected_source_schema}.{table}',
+                                                'output_table': '{selected_target_database}.{selected_target_schema}.{output_table_name}'
+                                            }}
+                                        ],
+                                        'replace_output_tables': true
+                                    }}
+                                );
+                                """
+                                session.sql(sql_command).collect()
+                        
+                        st.success("✅ Synthetic data has been successfully generated for the selected tables!", icon="✅")
+                        log_audit("Synthetic Data Generation for selected tables completed successfully.", "SUCCESS", "synthetic")
+                    except Exception as e:
+                        st.error(f"❌ Error executing SQL command: {e}", icon="🚨")
+                        log_audit("Synthetic Data Generation for selected tables encountered an error.", "FAILED", "synthetic")
+                else:
+                    st.error("❌ Please select at least one source table and a target schema.", icon="🚨")
+
+import streamlit as st
+import pandas as pd
+from snowflake.snowpark.context import get_active_session
+
+if app_mode == "Snowflake Masking":
+    session = get_active_session()
+
+    # Navigation buttons for the masking
+    app_mode_masking = st.sidebar.radio("Select Process", [
+        "Home",
+        "MASKING",
+        "MASKING VALIDATION"  # New classification edit option
+    ], index=0)
+
+    # Home page for Snowflake Masking app
+    if app_mode_masking == "Home":
+        st.markdown('<h2 class="font">Snowflake Masking App</h2>', unsafe_allow_html=True)
+        st.markdown('<p>This application is designed to assist you with data masking in Snowflake and classfication edit and submission. Please follow each step to mask Snowflake schemas.</p>', unsafe_allow_html=True)
+
+        # Overview of processes
+        st.subheader('Overview of Processes:')
+        st.markdown("""
+        **ALTR Mapper:**
+        In this step, we are inserting classification results into the `ALTR_DSAAS_DB.PUBLIC.CLASSIFICATION_DETAILS` table from the ALTR portal.
+
+        **ALTR_CLASSIFICATION_DETAILS:**
+        In this step, we are transforming the classification results from `ALTR_DSAAS_DB.PUBLIC.CLASSIFICATION_DETAILS` into the `DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS` table.
+
+        **TRANSFER_CLASSIFICATION_DETAILS:**
+        In this step, we transform the latest version of classification data from `DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS` into the `DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS` table for the respective schema.
+
+        **METADATA_REFRESH:**
+        This step fetches the respective databases, schemas, tables, and columns from `INFORMATION_SCHEMA` and inserts them into the metadata tables.
+
+        **COLUMN_TAG_MAPPING:**
+        In this step, we map columns and tags based on the classification details.
+
+        **INSERT_DATA_OUTPUT_FINAL:**
+        In this step, we populate the `DATA_OUTPUT_ID` for each schema and insert respective schema information into the `DATA_SET` table.
+
+        **CREATE_VIEWS:**
+        In this step, we create views based on source schemas and tables in target schemas.
+
+        **CLASSIFICATION_GENERATION:**
+        In this step, we execute the `CLASSIFICATION_REPORT_V1` procedure to generate classification reports.
+        """, unsafe_allow_html=True)
+
+    # Perform selections for Masking
+    elif app_mode_masking == "MASKING":
+        # Function to get databases based on prefix
+        def get_databases(env):
+            db_prefix = f"{env}_"
+            db_query = f"""
+            SELECT DATABASE_NAME
+            FROM INFORMATION_SCHEMA.DATABASES
+            WHERE DATABASE_NAME LIKE '{db_prefix}%'
+            AND DATABASE_NAME NOT LIKE '%_MASKED%' AND DATABASE_NAME NOT LIKE '%_ENCRYPT%'
+            """
+            rows = session.sql(db_query).collect()
+            return [row[0] for row in rows]
+
+        # Function to fetch schemas for a specific database
+        def get_schemas(database_name):
+            if not database_name:
+                return []
+            schema_query = f"SELECT SCHEMA_NAME FROM {database_name}.INFORMATION_SCHEMA.SCHEMATA"
+            rows = session.sql(schema_query).collect()
+            return [row[0] for row in rows]
+
+        # Function to fetch distinct BU names based on environment
+        def get_bu_names(env):
+            bu_query = f"SELECT DISTINCT BU_NAME FROM {env}_DB_MANAGER.MASKING.CONSUMER"
+            try:
+                rows = session.sql(bu_query).collect()
+                return [row[0] for row in rows]
+            except Exception as e:
+                st.warning(f"Could not fetch BU names for environment {env}: {e}")
+                return []
+
+        # Input selections for masking environment
+        masking_environment = st.selectbox("Masking Environment", ["DEV", "QA", "UAT", "PROD"])
+
+        # Get databases based on the selected environment
+        masking_database_list = get_databases(masking_environment)
+        selected_masking_database = st.selectbox("Database", masking_database_list)
+
+        masking_schema_list = []
+        selected_masking_schema = None
+        if selected_masking_database:
+            masking_schema_list = get_schemas(selected_masking_database)
+            selected_masking_schema = st.selectbox("Schema", masking_schema_list)
+
+        # Determine selected_classification_database based on selected_masking_database
+        selected_classification_database = None
+        if selected_masking_database:
+            # Split the database name by '_' and take the part after the environment prefix
+            db_suffix = selected_masking_database.split('_', 1)[-1]
+            selected_classification_database = f"PROD_{db_suffix}" # Always point to PROD
+
+        # Keep selected_classification_schema the same as selected_masking_schema
+        selected_classification_schema = selected_masking_schema
+
+        # Get BU names based on the selected environment
+        bu_name_list = get_bu_names(masking_environment)
+        selected_bu_name = st.selectbox("BU Name", bu_name_list)
+
+        # Get classification owner based on the new query criteria
+        classification_owner_list = []
+        if selected_classification_database and selected_classification_schema:
+            owner_query = f"""
+            WITH latest_import AS (
+              SELECT MAX(import_id) AS max_id
+              FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS
+              WHERE database_name = '{selected_classification_database}'
+              AND schema_name = '{selected_classification_schema}'
+            )
+            SELECT DISTINCT classification_owner
+            FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS
+            WHERE database_name = '{selected_classification_database}'
+              AND schema_name = '{selected_classification_schema}'
+              AND import_id = (SELECT max_id FROM latest_import);
+            """
+            try:
+                rows = session.sql(owner_query).collect()
+                classification_owner_list = [row[0] for row in rows]
+            except Exception as e:
+                st.warning(f"Could not fetch classification owner: {e}")
+                classification_owner_list = []
+
+        # Use classification owner from query results or fallback to "ALTR"
+        selected_classification_owner = classification_owner_list[0] if classification_owner_list else "ALTR"
+
+        # Button to execute all the masking processes
+        if st.button("Run Masking"):
+            if (selected_masking_database and selected_masking_schema and
+                selected_bu_name and selected_classification_database and selected_classification_schema):
+
+                # Track success of all operations
+                success = True
+
+                # Execute each process in sequence
+                if selected_classification_owner == "ALTR":
+                    try:
+                        # Execute ALTR MAPPER
+                        sql_command = f"""
+                        CALL ALTR_DSAAS_DB.PUBLIC.ALTR_TAG_MAPPER(
+                            MAPPING_FILE_PATH => BUILD_SCOPED_FILE_URL(@ALTR_DSAAS_DB.PUBLIC.ALTR_TAG_MAPPER_STAGE, 'gdlp-to-hipaa-map.json'),
+                            TAG_DB => '{masking_environment}_DB_MANAGER',
+                            TAG_SCHEMA => 'MASKING',
+                            RUN_COMMENT => '{selected_classification_database} DATABASE CLASSIFICATION',
+                            USE_DATABASES => '{selected_classification_database}',
+                            EXECUTE_SQL => FALSE,
+                            LOG_TABLE => 'CLASSIFICATION_DETAILS'
+                        );
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ ALTR MAPPER executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing ALTR MAPPER: {str(e)}")
+                        success = False
+
+                    if success:
+                        try:
+                            # Execute ALTR CLASSIFICATION DETAILS
+                            sql_command = f"CALL DEV_DB_MANAGER.MASKING.ALTR_CLASSIFICATION_DETAILS('{selected_classification_database}', '{selected_classification_schema}')"
+                            session.sql(sql_command).collect()
+                            st.success("✅ ALTR CLASSIFICATION DETAILS executed successfully!")
+                        except Exception as e:
+                            st.error(f"❌ Error executing ALTR CLASSIFICATION DETAILS: {str(e)}")
+                            success = False
+
+                # Section for handling transfers when classification owner is NOT ALTR
+                if selected_classification_owner != "ALTR":
+                    try:
+                        # Execute TRANSFER CLASSIFICATION DETAILS
+                        sql_command = f"CALL DEV_DB_MANAGER.MASKING.TRANSFER_CLASSIFICATION_DETAILS('{selected_classification_database}', '{selected_classification_schema}', '{selected_classification_owner}')"
+                        session.sql(sql_command).collect()
+                        st.success("✅ TRANSFER CLASSIFICATION DETAILS executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing TRANSFER CLASSIFICATION DETAILS: {str(e)}")
+                        success = False
+
+                # Metadata Refresh
+                if success:
+                    try:
+                        # Execute Metadata Refresh
+                        db_manager = f"{masking_environment}_DB_MANAGER"
+                        # Pass the selected masking database to the procedure
+                        sql_command = f"CALL {db_manager}.MASKING.UPDATE_METADATA_REFRESH_DATABASE('{selected_masking_database}')"
+                        session.sql(sql_command).collect()
+                        st.success("✅ Metadata Refresh executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing Metadata Refresh: {str(e)}")
+                        success = False
+
+                # Column Tag Mapping
+                if success:
+                    try:
+                        # Execute COLUMN TAG MAPPING
+                        sql_command = f"""
+                        CALL {masking_environment}_DB_MANAGER.MASKING.COLUMN_TAG_MAPPING(
+                            '{selected_classification_database}',
+                            '{selected_classification_schema}',
+                            '{selected_masking_database}',  -- Use selected masking database
+                            '{selected_masking_schema}',    -- Use selected masking schema
+                            '{selected_classification_owner}'
+                        )
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ COLUMN TAG MAPPING executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing COLUMN TAG MAPPING: {str(e)}")
+                        success = False
+
+                # Insert Data Output Final
+                if success:
+                    try:
+                        # Execute INSERT DATA OUTPUT FINAL
+                        sql_command = f"""
+                        CALL {masking_environment}_DB_MANAGER.MASKING.INSERT_DATA_OUTPUT_FINAL(
+                            '{selected_masking_database}',  -- Use selected masking database
+                            '{selected_masking_schema}',    -- Use selected masking schema
+                            '{selected_bu_name}',
+                            '{selected_classification_owner}'
+                        )
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ INSERT DATA OUTPUT FINAL executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing INSERT DATA OUTPUT FINAL: {str(e)}")
+                        success = False
+
+                 # Classification Generation
+                if success:
+                    try:
+                        # Execute CLASSIFICATION_GENERATION
+                        sql_command = f"CALL DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1('{selected_classification_database}', '{selected_classification_schema}', '{selected_classification_owner}');"
+                        session.sql(sql_command).collect()
+                        st.success("✅ CLASSIFICATION_GENERATION executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing CLASSIFICATION_GENERATION: {str(e)}")
+                        success = False
+
+                # Create Views
+                if success:
+                    try:
+                        # Execute CREATE VIEWS
+                        sql_command = f"""
+                        CALL {masking_environment}_DB_MANAGER.MASKING.CREATE_VIEWS(
+                            '{selected_masking_database}',  -- Use selected masking database
+                            '{selected_masking_schema}',    -- Use selected masking schema
+                            '{selected_masking_database}_MASKED',
+                            '{selected_masking_schema}'
+                        )
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ CREATE VIEWS executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing CREATE VIEWS: {str(e)}")
+                        success = False
+
+                try:
+                    if success:
+                        audit_message = f"MASKING for {selected_masking_database}_MASKED.{selected_masking_schema}"
+                        log_audit(audit_message, "Success", "masking")
+                    else:
+                        audit_message = f"MASKING for {selected_masking_database}_MASKED.{selected_masking_schema}"
+                        log_audit(audit_message, "Failure", "masking")
+                except Exception as e:
+                    st.error(f"❌ Error logging audit: {str(e)}")
+
+                if success:
+                    st.success("✅ Completed all processes successfully!")
+                else:
+                    st.warning("Some steps failed. Please review the errors.")
+            else:
+                st.warning("Please ensure all selections are made before running the masking process.")
+  
+           
+    elif app_mode_masking == "MASKING VALIDATION":
+        # Define all functions inside this block
+
+        def get_databases(env_prefix):
+            db_prefix = f"{env_prefix}_"
+            db_query = f"""
+                SELECT DATABASE_NAME 
+                FROM INFORMATION_SCHEMA.DATABASES 
+                WHERE DATABASE_NAME LIKE '{db_prefix}%'
+            """
+            rows = session.sql(db_query).collect()
+            return [row[0] for row in rows]
+
+        def get_schemas(database):
+            schema_query = f"SELECT SCHEMA_NAME FROM {database}.INFORMATION_SCHEMA.SCHEMATA"
+            rows = session.sql(schema_query).collect()
+            return [row[0] for row in rows]
+
+        def get_classification_owners(env):
+            owner_query = f"""
+                SELECT DISTINCT CLASSIFICATION_OWNER
+                FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
+            """
             rows = session.sql(owner_query).collect()
             return [row[0] for row in rows]
-        except:
-            return []
 
-    def execute_validation_queries_tags(env, selected_database, selected_schema, classification_owner):
-        """Run tag validation comparing source and target tag counts"""
-        try:
-            # Convert selected database to PROD for classification lookup
-            production_database = selected_database.replace("DEV_", "PROD_").replace("QA_", "PROD_").replace("UAT_", "PROD_")
-            
-            # Get source classifications
-            source_query = f"""
+        def execute_validation_queries_tags(env, selected_database, selected_schema, classification_owner):
+            try:
+                # Derive production database name
+                production_database = selected_database.replace("DEV_", "PROD_").replace("QA_", "PROD_").replace("UAT_", "PROD_")
+                # Query source tags
+                source_tags_query = f"""
                 SELECT COUNT(*) AS total_records
                 FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
                 WHERE "DATABASE" = '{production_database}'
                   AND "SCHEMA" = '{selected_schema}'
                   AND CLASSIFICATION_OWNER = '{classification_owner}'
-            """
-            
-            # Get target tag references
-            target_query = f"""
+                """
+                # Query target tags
+                target_tags_query = f"""
                 SELECT COUNT(*) AS TAG_COUNT
                 FROM DEV_DB_MANAGER.ACCOUNT_USAGE.TAG_REFERENCES
                 WHERE OBJECT_DATABASE = '{selected_database}_MASKED'
                   AND OBJECT_SCHEMA = '{selected_schema}'
-            """
-            
-            # Execute queries
-            source_count = session.sql(source_query).collect()[0][0]
-            target_count = session.sql(target_query).collect()[0][0]
-            
-            return source_count, target_count
-        except Exception as e:
-            return None, str(e)
+                """
+                source_count = session.sql(source_tags_query).collect()[0][0]
+                target_count = session.sql(target_tags_query).collect()[0][0]
+                return source_count, target_count
+            except Exception as e:
+                return None, str(e)
 
-    def execute_validation_queries_tables(env, selected_database, selected_schema):
-        """Run MD Table validation"""
-        try:
-            db_manager = f"{env}_DB_MANAGER"
-            count_tables_query = f"""
+        def execute_validation_queries_tables(env, selected_database, selected_schema):
+            try:
+                db_manager = f"{env}_DB_MANAGER"
+                count_tables_query = f"""
                 SELECT COUNT(TABLE_NAME) 
                 FROM {selected_database}.INFORMATION_SCHEMA.TABLES 
                 WHERE TABLE_CATALOG = '{selected_database}'
@@ -959,26 +799,25 @@ elif page == "🎭 Masking DQ":
                   AND TABLE_TYPE = 'BASE TABLE'
                   AND TABLE_NAME NOT LIKE 'RAW_%'
                   AND TABLE_NAME NOT LIKE 'VW_%'
-            """
-            validation_query = f"""
+                """
+                validation_query = f"""
                 SELECT COUNT(*) AS TABLE_COUNT
                 FROM {db_manager}.MASKING.MD_TABLE t
                 JOIN {db_manager}.MASKING.MD_SCHEMA s ON t.SCHEMA_ID = s.SCHEMA_ID
                 JOIN {db_manager}.MASKING.MD_DATABASE d ON s.DATABASE_ID = d.DATABASE_ID
                 WHERE d.DATABASE_NAME = '{selected_database}'
                   AND s.SCHEMA_NAME = '{selected_schema}'
-            """
-            table_count = session.sql(count_tables_query).collect()[0][0]
-            validation_count = session.sql(validation_query).collect()[0][0]
-            return table_count, validation_count
-        except Exception as e:
-            return None, str(e)
+                """
+                table_count = session.sql(count_tables_query).collect()[0][0]
+                validation_count = session.sql(validation_query).collect()[0][0]
+                return table_count, validation_count
+            except Exception as e:
+                return None, str(e)
 
-    def execute_validation_queries_columns(env, selected_database, selected_schema):
-        """Run MD Column validation"""
-        try:
-            db_manager = f"{env}_DB_MANAGER"
-            count_columns_query = f"""
+        def execute_validation_queries_columns(env, selected_database, selected_schema):
+            try:
+                db_manager = f"{env}_DB_MANAGER"
+                count_columns_query = f"""
                 SELECT COUNT(c.COLUMN_NAME) AS COLUMN_COUNT
                 FROM {selected_database}.INFORMATION_SCHEMA.COLUMNS c
                 JOIN {selected_database}.INFORMATION_SCHEMA.TABLES t
@@ -987,8 +826,8 @@ elif page == "🎭 Masking DQ":
                   AND t.TABLE_TYPE = 'BASE TABLE'
                   AND c.TABLE_NAME NOT LIKE 'RAW_%'
                   AND c.TABLE_NAME NOT LIKE 'VW_%'
-            """
-            validation_query = f"""
+                """
+                validation_query = f"""
                 SELECT COUNT(col.COLUMN_ID) AS COLUMN_COUNT
                 FROM {db_manager}.MASKING.MD_DATABASE db
                 JOIN {db_manager}.MASKING.MD_SCHEMA sc ON db.DATABASE_ID = sc.DATABASE_ID
@@ -1000,17 +839,17 @@ elif page == "🎭 Masking DQ":
                   AND sc.IS_ACTIVE = TRUE
                   AND tb.IS_ACTIVE = TRUE
                   AND col.IS_ACTIVE = TRUE
-            """
-            column_count = session.sql(count_columns_query).collect()[0][0]
-            validation_count = session.sql(validation_query).collect()[0][0]
-            return column_count, validation_count
-        except Exception as e:
-            return None, str(e)
+                """
+                column_count = session.sql(count_columns_query).collect()[0][0]
+                validation_count = session.sql(validation_query).collect()[0][0]
+                return column_count, validation_count
+            except Exception as e:
+                return None, str(e)
 
-    def execute_validation_queries_views(env, selected_database, selected_schema):
-        """Run View validation"""
-        try:
-            count_tables_query = f"""
+        def execute_validation_queries_views(env, selected_database, selected_schema):
+            try:
+                db_manager = f"{env}_DB_MANAGER"
+                count_tables_query = f"""
                 SELECT COUNT(TABLE_NAME) 
                 FROM {selected_database}.INFORMATION_SCHEMA.TABLES 
                 WHERE TABLE_CATALOG = '{selected_database}'
@@ -1018,23 +857,22 @@ elif page == "🎭 Masking DQ":
                   AND TABLE_TYPE = 'BASE TABLE'
                   AND TABLE_NAME NOT LIKE 'RAW_%'
                   AND TABLE_NAME NOT LIKE 'VW_%'
-            """
-            count_target_query = f"""
+                """
+                count_target_query = f"""
                 SELECT COUNT(TABLE_NAME) 
                 FROM {selected_database}_MASKED.INFORMATION_SCHEMA.VIEWS
                 WHERE TABLE_SCHEMA = '{selected_schema}'
-            """
-            table_count = session.sql(count_tables_query).collect()[0][0]
-            validation_count = session.sql(count_target_query).collect()[0][0]
-            return table_count, validation_count
-        except Exception as e:
-            return None, str(e)
+                """
+                table_count = session.sql(count_tables_query).collect()[0][0]
+                validation_count = session.sql(count_target_query).collect()[0][0]
+                return table_count, validation_count
+            except Exception as e:
+                return None, str(e)
 
-    def execute_validation_queries_data_set(env, selected_database, selected_schema):
-        """Run Data Set validation"""
-        try:
-            db_manager = f"{env}_DB_MANAGER"
-            count_columns_query = f"""
+        def execute_validation_queries_data_set(env, selected_database, selected_schema):
+            try:
+                db_manager = f"{env}_DB_MANAGER"
+                count_columns_query = f"""
                 SELECT COUNT(col.COLUMN_ID) AS COLUMN_COUNT
                 FROM {db_manager}.MASKING.MD_DATABASE db
                 JOIN {db_manager}.MASKING.MD_SCHEMA sc ON db.DATABASE_ID = sc.DATABASE_ID
@@ -1046,8 +884,8 @@ elif page == "🎭 Masking DQ":
                   AND sc.IS_ACTIVE = TRUE
                   AND tb.IS_ACTIVE = TRUE
                   AND col.IS_ACTIVE = TRUE
-            """
-            validation_query = f"""
+                """
+                validation_query = f"""
                 SELECT COUNT(*) AS total_records
                 FROM (
                     SELECT DISTINCT
@@ -1072,568 +910,647 @@ elif page == "🎭 Masking DQ":
                             AND s1.schema_name = '{selected_schema}'
                       )
                 ) AS subquery
-            """
-            column_count = session.sql(count_columns_query).collect()[0][0]
-            data_count = session.sql(validation_query).collect()[0][0]
-            return column_count, data_count
-        except Exception as e:
-            return None, str(e)
-
-    # NEW CLASSIFICATION VALIDATION FUNCTION
-    def run_classification_validation(env, selected_database, selected_schema, classification_owner):
-        """Run classification validation comparing classification details with tag references"""
-        with st.spinner("🔄 Running classification validation..."):
-            try:
-                # Convert selected database to PROD for classification lookup
-                production_database = selected_database.replace("DEV_", "PROD_").replace("QA_", "PROD_").replace("UAT_", "PROD_")
-                
-                # Get source classifications
-                source_query = f"""
-                    SELECT "TABLE", "COLUMN", TAG
-                    FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
-                    WHERE "DATABASE" = '{production_database}'
-                      AND "SCHEMA" = '{selected_schema}'
-                      AND CLASSIFICATION_OWNER = '{classification_owner}'
                 """
-                
-                # Get target tag references
-                target_query = f"""
-                    SELECT OBJECT_NAME AS "TABLE", COLUMN_NAME AS "COLUMN", TAG_NAME
-                    FROM DEV_DB_MANAGER.ACCOUNT_USAGE.TAG_REFERENCES
-                    WHERE OBJECT_DATABASE = '{selected_database}_MASKED'
-                      AND OBJECT_SCHEMA = '{selected_schema}'
-                """
-                
-                # Execute queries
-                source_result = session.sql(source_query).collect()
-                target_result = session.sql(target_query).collect()
-                
-                # Convert to sets for comparison
-                source_set = set()
-                for row in source_result:
-                    source_set.add((row['TABLE'], row['COLUMN'], row['TAG']))
-                
-                target_set = set()
-                for row in target_result:
-                    target_set.add((row['TABLE'], row['COLUMN'], row['TAG_NAME']))
-                
-                # Create results list
-                results = []
-                
-                # Check each source classification
-                for table, column, tag in source_set:
-                    target_match = (table, column, tag) in target_set
-                    test_case = "SUCCESS" if target_match else "FAILURE"
-                    
-                    results.append({
-                        "Environment": env,
-                        "Database": selected_database,
-                        "Schema": selected_schema,
-                        "Classification Owner": classification_owner,
-                        "Source Table": table,
-                        "Source Column": column,
-                        "Source Tag": tag,
-                        "Target Table": table if target_match else "Not Found",
-                        "Target Column": column if target_match else "Not Found",
-                        "Target Tag": tag if target_match else "Not Found",
-                        "Test Case": test_case
-                    })
-                
-                # Check for extra target tags not in source
-                for table, column, tag in target_set:
-                    if (table, column, tag) not in source_set:
-                        results.append({
-                            "Environment": env,
-                            "Database": selected_database,
-                            "Schema": selected_schema,
-                            "Classification Owner": classification_owner,
-                            "Source Table": "Not in Source",
-                            "Source Column": "Not in Source",
-                            "Source Tag": "Not in Source",
-                            "Target Table": table,
-                            "Target Column": column,
-                            "Target Tag": tag,
-                            "Test Case": "FAILURE"
-                        })
-                
-                return pd.DataFrame(results)
-                
+                column_count = session.sql(count_columns_query).collect()[0][0]
+                data_count = session.sql(validation_query).collect()[0][0]
+                return column_count, data_count
             except Exception as e:
-                st.error(f"❌ Error during classification validation: {e}")
-                return pd.DataFrame([])
+                return None, str(e)
 
-    # UI Controls
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        env = st.selectbox("🌍 Environment", ["DEV", "QA", "UAT", "PROD"])
-    with col2:
+        # User input selections
+        env = st.selectbox("Select Environment", ["DEV", "QA", "UAT", "PROD"])
         database_list = get_databases(env)
-        selected_database = st.selectbox("🏢 Database", database_list, key="db_select")
-    with col3:
-        schema_list = get_schemas(selected_database) if selected_database else []
-        selected_schema = st.selectbox("📁 Schema", schema_list, key="schema_select")
-    with col4:
+        selected_database = st.selectbox("Select Database", database_list, key="db_select")
+        schema_list = get_schemas(selected_database)
+        selected_schema = st.selectbox("Select Schema", schema_list, key="schema_select")
         classification_owners = get_classification_owners(env)
-        classification_owner = st.selectbox("👤 Classification Owner", classification_owners)
+        classification_owner = st.selectbox("Select Classification Owner", classification_owners)
 
-    # Button layout
-    col_btn1, col_btn2 = st.columns(2)
-    
-    with col_btn1:
-        if st.button("🚀 Run Masking Validations", type="primary"):
-            if not all([env, selected_database, selected_schema, classification_owner]):
-                st.error("❌ Please fill in all required fields")
-            else:
-                with st.spinner("🔄 Running comprehensive masking validations..."):
-                    results_for_csv = []
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    
-                    # Progress tracking
-                    validation_steps = ["MD Tables", "MD Columns", "Data Set", "Views", "Tags"]
-                    progress_bar = st.progress(0)
-                    
-                    for idx, validation_type in enumerate(validation_steps):
-                        progress_bar.progress((idx + 1) / len(validation_steps))
-                        
-                        if validation_type == "MD Tables":
-                            table_count, table_validation_count = execute_validation_queries_tables(env, selected_database, selected_schema)
-                            test_case = "SUCCESS" if table_count == table_validation_count else "FAILURE"
-                            results_for_csv.append({
-                                "Environment": env,
-                                "Database": selected_database,
-                                "Schema": selected_schema,
-                                "Validation": "MD Tables",
-                                "Source Count": table_count,
-                                "Target Count": table_validation_count,
-                                "Test Case": test_case
-                            })
-                        
-                        elif validation_type == "MD Columns":
-                            column_count, column_validation_count = execute_validation_queries_columns(env, selected_database, selected_schema)
-                            test_case = "SUCCESS" if column_count == column_validation_count else "FAILURE"
-                            results_for_csv.append({
-                                "Environment": env,
-                                "Database": selected_database,
-                                "Schema": selected_schema,
-                                "Validation": "MD Columns",
-                                "Source Count": column_count,
-                                "Target Count": column_validation_count,
-                                "Test Case": test_case
-                            })
-                        
-                        elif validation_type == "Data Set":
-                            dataset_count, dataset_data_count = execute_validation_queries_data_set(env, selected_database, selected_schema)
-                            test_case = "SUCCESS" if dataset_count == dataset_data_count else "FAILURE"
-                            results_for_csv.append({
-                                "Environment": env,
-                                "Database": selected_database,
-                                "Schema": selected_schema,
-                                "Validation": "Data Set",
-                                "Source Count": dataset_count,
-                                "Target Count": dataset_data_count,
-                                "Test Case": test_case
-                            })
-                        
-                        elif validation_type == "Views":
-                            view_table_count, validation_count_views = execute_validation_queries_views(env, selected_database, selected_schema)
-                            test_case = "SUCCESS" if view_table_count == validation_count_views else "FAILURE"
-                            results_for_csv.append({
-                                "Environment": env,
-                                "Database": selected_database,
-                                "Schema": selected_schema,
-                                "Validation": "Views",
-                                "Source Count": view_table_count,
-                                "Target Count": validation_count_views,
-                                "Test Case": test_case
-                            })
-                        
-                        elif validation_type == "Tags":
-                            tags_source_count, tags_target_count = execute_validation_queries_tags(env, selected_database, selected_schema, classification_owner)
-                            test_case = "SUCCESS" if tags_source_count == tags_target_count else "FAILURE"
-                            results_for_csv.append({
-                                "Environment": env,
-                                "Database": selected_database,
-                                "Schema": selected_schema,
-                                "Validation": "Tags",
-                                "Source Count": tags_source_count,
-                                "Target Count": tags_target_count,
-                                "Test Case": test_case
-                            })
+        if st.button("Run All Validations"):
+            results = {}
 
-                    progress_bar.empty()
-                    
-                    # Display results
-                    results_df = pd.DataFrame(results_for_csv)
-                    
-                    st.markdown('<h3 class="sub-header">📈 Validation Results</h3>', unsafe_allow_html=True)
-                    display_summary_metrics(results_df)
-                    
-                    st.markdown("### 📋 Detailed Results")
-                    styled_df = style_dataframe(results_df)
-                    st.dataframe(styled_df, use_container_width=True)
-                    
-                    # Download button
-                    csv_bytes = results_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Validation Results",
-                        data=csv_bytes,
-                        file_name=f"masking_validation_results_{timestamp}.csv",
-                        mime="text/csv"
-                    )
+            # Run all validations
+            table_count, table_validation_count = execute_validation_queries_tables(env, selected_database, selected_schema)
+            results['MD Tables'] = {
+                "Source Count": table_count,
+                "Target Count": table_validation_count,
+            }
+            column_count, column_validation_count = execute_validation_queries_columns(env, selected_database, selected_schema)
+            results['MD Columns'] = {
+                "Source Count": column_count,
+                "Target Count": column_validation_count,
+            }
+            dataset_count, dataset_data_count = execute_validation_queries_data_set(env, selected_database, selected_schema)
+            results['Data Set'] = {
+                "Source Count": dataset_count,
+                "Target Count": dataset_data_count,
+            }
+            view_table_count, validation_count = execute_validation_queries_views(env, selected_database, selected_schema)
+            results['Views'] = {
+                "Source Count": view_table_count,
+                "Target Count": validation_count,
+            }
+            tags_source_count, tags_target_count = execute_validation_queries_tags(env, selected_database, selected_schema, classification_owner)
+            results['Tags'] = {
+                "Source Count": tags_source_count,
+                "Target Count": tags_target_count,
+            }
 
-    with col_btn2:
-        if st.button("🔍 Run Tags Validation", type="secondary"):
-            if not all([env, selected_database, selected_schema, classification_owner]):
-                st.error("❌ Please fill in all required fields")
-            else:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                df = run_classification_validation(env, selected_database, selected_schema, classification_owner)
-                
-                if not df.empty:
-                    st.markdown('<h3 class="sub-header">🔍 Classification Validation Results</h3>', unsafe_allow_html=True)
-                    display_summary_metrics(df)
-                    
-                    st.markdown("### 📋 Detailed Results")
-                    styled_df = style_dataframe(df)
-                    st.dataframe(styled_df, use_container_width=True)
-                    
-                    # Download button
-                    csv_bytes = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Classification Results",
-                        data=csv_bytes,
-                        file_name=f"classification_validation_{timestamp}.csv",
-                        mime="text/csv"
-                    )
+            # Display results
+            for validation_type, counts in results.items():
+                st.markdown(f"### {validation_type} Validation Results")
+                if None in counts.values():
+                    st.error(f"Error during {validation_type} validation.")
                 else:
-                    st.info("ℹ️ No classification data found for validation.")
+                    st.success(f"Source Count: {counts['Source Count']}, Target Count: {counts['Target Count']}")
 
-elif page == "🔐 Encryption DQ":
-    st.markdown('<h1 class="main-header">🔐 Encryption Quality</h1>', unsafe_allow_html=True)
-    
-    # Encryption DQ functions
-    @st.cache_data(ttl=300)
-    def get_encryption_databases(env_prefix):
-        """Get databases for encryption validation"""
-        db_prefix = f"{env_prefix}_"
-        db_query = f"""
-            SELECT DATABASE_NAME 
-            FROM INFORMATION_SCHEMA.DATABASES 
+        
+                    
+elif app_mode == "Snowflake Encryption":
+    session = get_active_session()
+
+    # Navigation buttons for the encryption process
+    app_mode_encryption = st.sidebar.radio("Select Process", [
+        "Home",
+        "ENCRYPTION"
+    ], index=0)
+
+    # Home page for Snowflake Encryption app
+    if app_mode_encryption == "Home":
+        st.markdown('<h2 class="font">Snowflake Encryption App</h2>', unsafe_allow_html=True)
+        st.markdown(
+            '<p>This application is designed to assist you with data encryption in Snowflake. '
+            'Please follow each step to encrypt Snowflake schemas.</p>', unsafe_allow_html=True
+        )
+
+       # Overview of processes
+        st.subheader('Overview of Processes:')
+        st.markdown("""
+        **ENCRYPTION:**  
+        This application enables you to encrypt Snowflake schema tables. You need to select the database and schema you wish to encrypt. Additionally, you must choose the target environment where the encrypted tables will be deployed. 
+        All encrypted databases will have a `_ENCRYPT` suffix, e.g., `DEV_DATALAKE_ENCRYPT`""", unsafe_allow_html=True)
+
+         # Limitations & Workarounds
+        st.subheader('Limitations & Workarounds:')
+        st.markdown("""
+        **JOINS USING ENCRYPTED COLUMNS:**  
+        Tables can be joined using encrypted columns.Join columns must be encrypted using the same **KEY**, **TWEAK**, and **ALPHABET**.
+
+ **SINGLE/MULTIPOINT SEARCHES:**  
+        Search values should be encrypted using the same **KEY**, **TWEAK**, and **ALPHABET**.
+
+**AGGREGATION (COUNT, SUM):**  
+        Values encrypted with the same **NUMERIC ALPHABET** can be aggregated.
+
+   **LEXICOGRAPHIC COMPARISON:**  
+        Ciphertext cannot be compared lexicographically without decryption.
+
+**STRING SEARCHES & PATTERN MATCHING (STRATWITH, SUBSTR, LIKE, REGEXP):**  
+        Cannot be performed on encrypted data since ciphertext does not resemble plaintext patterns.
+		The workaround is to use DECRYPT VIEW.""", unsafe_allow_html=True)
+
+    # Encryption process
+    elif app_mode_encryption == "ENCRYPTION":
+        session = get_active_session()
+
+        import re
+    # Then select Source Database
+        def get_databases(env):
+            db_prefix = f"{env}_"
+            db_query = f"""
+            SELECT DATABASE_NAME
+            FROM INFORMATION_SCHEMA.DATABASES
             WHERE DATABASE_NAME LIKE '{db_prefix}%'
-            AND DATABASE_NAME NOT LIKE '%_ENCRYPT'
-            AND DATABASE_NAME NOT LIKE '%_MASKED%'
-        """
-        try:
+            AND DATABASE_NAME NOT LIKE '%_MASKED%' AND DATABASE_NAME NOT LIKE '%_ENCRYPT%'
+            """
             rows = session.sql(db_query).collect()
             return [row[0] for row in rows]
-        except:
-            return []
 
-    @st.cache_data(ttl=300)
-    def get_encryption_schemas(database):
-        """Get schemas for encryption validation"""
-        schema_query = f"SELECT SCHEMA_NAME FROM {database}.INFORMATION_SCHEMA.SCHEMATA"
-        try:
+        # Function to fetch schemas for a specific database
+        def get_schemas(database_name):
+            if not database_name:
+                return []
+            schema_query = f"SELECT SCHEMA_NAME FROM {database_name}.INFORMATION_SCHEMA.SCHEMATA"
             rows = session.sql(schema_query).collect()
             return [row[0] for row in rows]
-        except:
-            return []
 
-    @st.cache_data(ttl=300)
-    def get_encryption_classification_owners(env):
-        """Get classification owners for encryption validation"""
-        owner_query = f"""
-            SELECT DISTINCT CLASSIFICATION_OWNER
-            FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
-        """
-        try:
-            rows = session.sql(owner_query).collect()
-            return [row[0] for row in rows]
-        except:
-            return []
-
-    def get_tables_and_columns_from_classification(env, selected_database, selected_schema, classification_owner):
-        """Get tables and columns from classification details based on environment mapping"""
-        try:
-            # Convert selected database to PROD for classification lookup
-            prod_database = selected_database.replace("DEV_", "PROD_").replace("QA_", "PROD_").replace("UAT_", "PROD_")
-            
-            classification_query = f"""
-                SELECT DISTINCT 
-                    "TABLE" as table_name,
-                    "COLUMN" as column_name
-                FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
-                WHERE "DATABASE" = '{prod_database}'
-                AND "SCHEMA" = '{selected_schema}'
-                AND CLASSIFICATION_OWNER = '{classification_owner}'
-                ORDER BY "TABLE", "COLUMN"
-            """
-            
-            rows = session.sql(classification_query).collect()
-            return [(row['TABLE_NAME'], row['COLUMN_NAME']) for row in rows]
-        except Exception as e:
-            st.error(f"Error fetching classification data: {e}")
-            return []
-
-    def compare_column_data(original_db, encrypted_db, schema, table_name, column_name, sample_size=100):
-        """Compare data between original and encrypted columns"""
-        try:
-            # Get sample data from original database
-            original_query = f"""
-                SELECT {column_name}
-                FROM {original_db}.{schema}.{table_name}
-                WHERE {column_name} IS NOT NULL
-                LIMIT {sample_size}
-            """
-            
-            # Get sample data from encrypted database
-            encrypted_query = f"""
-                SELECT {column_name}
-                FROM {encrypted_db}.{schema}.{table_name}
-                WHERE {column_name} IS NOT NULL
-                LIMIT {sample_size}
-            """
-            
-            original_result = session.sql(original_query).collect()
-            encrypted_result = session.sql(encrypted_query).collect()
-            
-            if not original_result or not encrypted_result:
-                return False, "No data found in one or both databases", 0, 0
-            
-            # Extract values
-            original_values = [str(row[0]) for row in original_result if row[0] is not None]
-            encrypted_values = [str(row[0]) for row in encrypted_result if row[0] is not None]
-            
-            if not original_values or not encrypted_values:
-                return False, "No valid data to compare", 0, 0
-            
-            # Compare if data is different (encryption should make data different)
-            different_count = 0
-            min_length = min(len(original_values), len(encrypted_values))
-            
-            for i in range(min_length):
-                if original_values[i] != encrypted_values[i]:
-                    different_count += 1
-            
-            # Success if data is different (indicating encryption worked)
-            is_encrypted = different_count > 0
-            comparison_details = f"Compared {min_length} records, {different_count} different"
-            
-            return is_encrypted, comparison_details, len(original_values), len(encrypted_values)
-            
-        except Exception as e:
-            return False, f"Error comparing data: {str(e)}", 0, 0
-
-    def check_table_column_exists(database, schema, table_name, column_name):
-        """Check if table and column exist in database"""
-        try:
-            check_query = f"""
-                SELECT COUNT(*) as count
-                FROM {database}.INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = '{schema}'
-                AND TABLE_NAME = '{table_name}'
-                AND COLUMN_NAME = '{column_name}'
-            """
-            result = session.sql(check_query).collect()
-            return result[0]['COUNT'] > 0 if result else False
-        except:
-            return False
-
-    def run_encryption_data_validation(env, selected_database, selected_schema, classification_owner):
-        """Run encryption validation by comparing actual data between original and encrypted databases"""
-        with st.spinner("🔄 Running encryption data validation..."):
-            # Get encrypted database name
-            encrypt_database = f"{selected_database}_SETUP_ENCRYPT"
-            
-            # Get tables and columns from classification
-            classification_data = get_tables_and_columns_from_classification(env, selected_database, selected_schema, classification_owner)
-            
-            if not classification_data:
-                st.warning("⚠️ No classification data found for the selected criteria.")
-                return pd.DataFrame([])
-
-            results = []
-            progress_bar = st.progress(0)
-            
-            for idx, (table_name, column_name) in enumerate(classification_data):
-                progress_bar.progress((idx + 1) / len(classification_data))
-                
-                # Check if table and column exist in both databases
-                original_exists = check_table_column_exists(selected_database, selected_schema, table_name, column_name)
-                encrypted_exists = check_table_column_exists(encrypt_database, selected_schema, table_name, column_name)
-                
-                if not original_exists or not encrypted_exists:
-                    test_case = "FAILURE"
-                    details = f"Column missing - Original: {'Yes' if original_exists else 'No'}, Encrypted: {'Yes' if encrypted_exists else 'No'}"
-                    original_count = encrypted_count = 0
-                else:
-                    # Compare actual data
-                    is_encrypted, comparison_details, original_count, encrypted_count = compare_column_data(
-                        selected_database, encrypt_database, selected_schema, table_name, column_name
-                    )
-                    
-                    if is_encrypted:
-                        test_case = "SUCCESS"
-                        details = f"Data encrypted successfully - {comparison_details}"
-                    else:
-                        test_case = "FAILURE"
-                        details = f"Data not encrypted or identical - {comparison_details}"
-                
-                results.append({
-                    "Environment": env,
-                    "Original Database": selected_database,
-                    "Encrypted Database": encrypt_database,
-                    "Schema": selected_schema,
-                    "Table": table_name,
-                    "Column": column_name,
-                    "Classification Owner": classification_owner,
-                    "Original Count": original_count,
-                    "Encrypted Count": encrypted_count,
-                    "Original Exists": "Yes" if original_exists else "No",
-                    "Encrypted Exists": "Yes" if encrypted_exists else "No",
-                    "Test Case": test_case,
-                    "Details": details
-                })
-
-            progress_bar.empty()
-            return pd.DataFrame(results)
-
-    def run_non_encryption_validation(env, selected_database, selected_schema, classification_owner):
-        """Run validation for columns that should NOT be encrypted"""
-        with st.spinner("🔄 Running non-encryption validation..."):
-            # Get encrypted database name
-            encrypt_database = f"{selected_database}_SETUP_ENCRYPT"
-            
-            # Get all columns from the schema that are NOT in classification details
+        # Function to fetch distinct BU names based on environment
+        def get_bu_names(env):
+            bu_query = f"SELECT DISTINCT BU_NAME FROM {env}_DB_MANAGER.MASKING.CONSUMER"
             try:
-                # Get all columns in the schema
-                all_columns_query = f"""
-                    SELECT DISTINCT TABLE_NAME, COLUMN_NAME
-                    FROM {selected_database}.INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = '{selected_schema}'
-                    AND TABLE_NAME NOT LIKE 'RAW_%'
-                    AND TABLE_NAME NOT LIKE 'VW_%'
-                    AND COLUMN_NAME NOT LIKE 'ROW_%'
-                    ORDER BY TABLE_NAME, COLUMN_NAME
-                """
-                
-                all_columns_result = session.sql(all_columns_query).collect()
-                all_columns = [(row['TABLE_NAME'], row['COLUMN_NAME']) for row in all_columns_result]
-                
-                # Get classified columns (these should be encrypted)
-                prod_database = selected_database.replace("DEV_", "PROD_").replace("QA_", "PROD_").replace("UAT_", "PROD_")
-                classified_columns_query = f"""
-                    SELECT DISTINCT "TABLE" as table_name, "COLUMN" as column_name
-                    FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_DETAILS
-                    WHERE "DATABASE" = '{prod_database}'
-                    AND "SCHEMA" = '{selected_schema}'
-                    AND CLASSIFICATION_OWNER = '{classification_owner}'
-                """
-                
-                classified_result = session.sql(classified_columns_query).collect()
-                classified_columns = set((row['TABLE_NAME'], row['COLUMN_NAME']) for row in classified_result)
-                
-                # Get non-classified columns (these should NOT be encrypted)
-                non_classified_columns = [col for col in all_columns if col not in classified_columns]
-                
-                if not non_classified_columns:
-                    st.info("ℹ️ All columns in this schema are classified for encryption.")
-                    return pd.DataFrame([])
-                
-                results = []
-                progress_bar = st.progress(0)
-                
-                for idx, (table_name, column_name) in enumerate(non_classified_columns):
-                    progress_bar.progress((idx + 1) / len(non_classified_columns))
-                    
-                    # Check if table and column exist in both databases
-                    original_exists = check_table_column_exists(selected_database, selected_schema, table_name, column_name)
-                    encrypted_exists = check_table_column_exists(encrypt_database, selected_schema, table_name, column_name)
-                    
-                    if not original_exists or not encrypted_exists:
-                        test_case = "FAILURE"
-                        details = f"Column missing - Original: {'Yes' if original_exists else 'No'}, Encrypted: {'Yes' if encrypted_exists else 'No'}"
-                        original_count = encrypted_count = 0
-                    else:
-                        # Compare actual data - for non-encrypted columns, data should be identical
-                        is_different, comparison_details, original_count, encrypted_count = compare_column_data(
-                            selected_database, encrypt_database, selected_schema, table_name, column_name
-                        )
-                        
-                        if not is_different:
-                            test_case = "SUCCESS"
-                            details = f"Data identical (not encrypted) - {comparison_details}"
-                        else:
-                            test_case = "FAILURE"
-                            details = f"Data unexpectedly different - {comparison_details}"
-                    
-                    results.append({
-                        "Environment": env,
-                        "Original Database": selected_database,
-                        "Encrypted Database": encrypt_database,
-                        "Schema": selected_schema,
-                        "Table": table_name,
-                        "Column": column_name,
-                        "Classification": "Not Required",
-                        "Original Count": original_count,
-                        "Encrypted Count": encrypted_count,
-                        "Original Exists": "Yes" if original_exists else "No",
-                        "Encrypted Exists": "Yes" if encrypted_exists else "No",
-                        "Test Case": test_case,
-                        "Details": details
-                    })
-
-                progress_bar.empty()
-                return pd.DataFrame(results)
-                
+                rows = session.sql(bu_query).collect()
+                return [row[0] for row in rows]
             except Exception as e:
-                st.error(f"Error during non-encryption validation: {e}")
-                return pd.DataFrame([])
+                st.warning(f"Could not fetch BU names for environment {env}: {e}")
+                return []
 
-    # UI Controls
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        encrypt_env = st.selectbox("🌍 Environment", ["DEV", "QA", "UAT", "PROD"], key="encrypt_env")
-    with col2:
-        encrypt_database_list = get_encryption_databases(encrypt_env)
-        encrypt_selected_database = st.selectbox("🏢 Database", encrypt_database_list, key="encrypt_db_select")
-    with col3:
-        encrypt_schema_list = get_encryption_schemas(encrypt_selected_database) if encrypt_selected_database else []
-        encrypt_selected_schema = st.selectbox("📁 Schema", encrypt_schema_list, key="encrypt_schema_select")
-    with col4:
-        encrypt_classification_owners = get_encryption_classification_owners(encrypt_env)
-        encrypt_classification_owner = st.selectbox("👤 Classification Owner", encrypt_classification_owners, key="encrypt_owner_select")
+        # Input selections for masking environment
+        encryption_environment = st.selectbox("Encryption Environment", ["DEV", "QA", "UAT", "PROD"])
 
-    # Run validation automatically when all fields are selected
-    if all([encrypt_env, encrypt_selected_database, encrypt_selected_schema, encrypt_classification_owner]):
-        
-        # Two validation buttons
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            if st.button("🔐 Validate Encrypted Columns", type="primary", key="encrypt_validate"):
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                df = run_encryption_data_validation(encrypt_env, encrypt_selected_database, encrypt_selected_schema, encrypt_classification_owner)
-                
-                if not df.empty:
-                    st.markdown('<h3 class="sub-header">🔐 Encrypted Columns Validation Results</h3>', unsafe_allow_html=True)
-                    display_summary_metrics(df)
-                    
-                    st.markdown("### 📋 Detailed Results")
-                    styled_df = style_dataframe(df)
-                    st.dataframe(styled_df, use_container_width=True)
-                    
-                    # Download button
-                    csv_bytes = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Encryption Results",
-                        data=csv_bytes,
-                        file_name=f"encryption_validation_{timestamp}.csv",
-                        mime="text/csv"
-                    )
+        # Get databases based on the selected environment
+        masking_database_list = get_databases(encryption_environment)
+        selected_masking_database = st.selectbox("Database", masking_database_list)
+
+        masking_schema_list = []
+        selected_masking_schema = None
+        if selected_masking_database:
+            masking_schema_list = get_schemas(selected_masking_database)
+            selected_masking_schema = st.selectbox("Schema", masking_schema_list)
+
+        # Determine selected_classification_database based on selected_masking_database
+        selected_classification_database = None
+        if selected_masking_database:
+            # Split the database name by '_' and take the part after the environment prefix
+            db_suffix = selected_masking_database.split('_', 1)[-1]
+            selected_classification_database = f"PROD_{db_suffix}" # Always point to PROD
+
+        # Keep selected_classification_schema the same as selected_masking_schema
+        selected_classification_schema = selected_masking_schema
+
+        # Get BU names based on the selected environment
+        bu_name_list = get_bu_names(encryption_environment)
+        selected_bu_name = st.selectbox("BU Name", bu_name_list)
+
+        # Get classification owner based on the new query criteria
+        classification_owner_list = []
+        if selected_classification_database and selected_classification_schema:
+            owner_query = f"""
+            WITH latest_import AS (
+              SELECT MAX(import_id) AS max_id
+              FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS
+              WHERE database_name = '{selected_classification_database}'
+              AND schema_name = '{selected_classification_schema}'
+            )
+            SELECT DISTINCT classification_owner
+            FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS
+            WHERE database_name = '{selected_classification_database}'
+              AND schema_name = '{selected_classification_schema}'
+              AND import_id = (SELECT max_id FROM latest_import);
+            """
+            try:
+                rows = session.sql(owner_query).collect()
+                classification_owner_list = [row[0] for row in rows]
+            except Exception as e:
+                st.warning(f"Could not fetch classification owner: {e}")
+                classification_owner_list = []
+
+        # Use classification owner from query results or fallback to "ALTR"
+        selected_classification_owner = classification_owner_list[0] if classification_owner_list else "ALTR"
+
+        # Button to execute all the masking processes
+        if st.button("Run Encryption"):
+            if (selected_masking_database and selected_masking_schema and
+                selected_bu_name and selected_classification_database and selected_classification_schema):
+
+                # Track success of all operations
+                success = True
+
+                # Execute each process in sequence
+                if selected_classification_owner == "ALTR":
+                    try:
+                        # Execute ALTR MAPPER
+                        sql_command = f"""
+                        CALL ALTR_DSAAS_DB.PUBLIC.ALTR_TAG_MAPPER(
+                            MAPPING_FILE_PATH => BUILD_SCOPED_FILE_URL(@ALTR_DSAAS_DB.PUBLIC.ALTR_TAG_MAPPER_STAGE, 'gdlp-to-hipaa-map.json'),
+                            TAG_DB => '{encryption_environment}_DB_MANAGER',
+                            TAG_SCHEMA => 'MASKING',
+                            RUN_COMMENT => '{selected_classification_database} DATABASE CLASSIFICATION',
+                            USE_DATABASES => '{selected_classification_database}',
+                            EXECUTE_SQL => FALSE,
+                            LOG_TABLE => 'CLASSIFICATION_DETAILS'
+                        );
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ ALTR MAPPER executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing ALTR MAPPER: {str(e)}")
+                        success = False
+
+                    if success:
+                        try:
+                            # Execute ALTR CLASSIFICATION DETAILS
+                            sql_command = f"CALL DEV_DB_MANAGER.MASKING.ALTR_CLASSIFICATION_DETAILS('{selected_classification_database}', '{selected_classification_schema}')"
+                            session.sql(sql_command).collect()
+                            st.success("✅ ALTR CLASSIFICATION DETAILS executed successfully!")
+                        except Exception as e:
+                            st.error(f"❌ Error executing ALTR CLASSIFICATION DETAILS: {str(e)}")
+                            success = False
+
+                # Section for handling transfers when classification owner is NOT ALTR
+                if selected_classification_owner != "ALTR":
+                    try:
+                        # Execute TRANSFER CLASSIFICATION DETAILS
+                        sql_command = f"CALL DEV_DB_MANAGER.MASKING.TRANSFER_CLASSIFICATION_DETAILS('{selected_classification_database}', '{selected_classification_schema}', '{selected_classification_owner}')"
+                        session.sql(sql_command).collect()
+                        st.success("✅ TRANSFER CLASSIFICATION DETAILS executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing TRANSFER CLASSIFICATION DETAILS: {str(e)}")
+                        success = False
+
+                # Insert Data Output Final
+                if success:
+                    try:
+                        # Execute INSERT DATA OUTPUT FINAL
+                        sql_command = f"""
+                        CALL {encryption_environment}_DB_MANAGER.MASKING.INSERT_DATA_OUTPUT_FINAL_ENCRYPTION(
+                            '{selected_masking_database}',  -- Use selected masking database
+                            '{selected_masking_schema}',    -- Use selected masking schema
+                            '{selected_bu_name}',
+                            '{selected_classification_owner}'
+                        )
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ INSERT DATA OUTPUT FINAL executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing INSERT DATA OUTPUT FINAL: {str(e)}")
+                        success = False
+
+                # Classification Generation
+                if success:
+                    try:
+                        # Execute CLASSIFICATION_GENERATION
+                        sql_command = f"CALL DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1('{selected_classification_database}', '{selected_classification_schema}', '{selected_classification_owner}');"
+                        session.sql(sql_command).collect()
+                        st.success("✅ CLASSIFICATION_GENERATION executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing CLASSIFICATION_GENERATION: {str(e)}")
+                        success = False
+
+
+                # Create Tables
+                if success:
+                    try:
+                        # Execute CREATE TABLES
+                        sql_command = f"""
+                        CALL {encryption_environment}_DB_MANAGER.ENCRYPTION.ENCRYPT_TABLES(
+                            '{selected_masking_database}',  -- Use selected masking database
+                            '{selected_masking_schema}',    -- Use selected masking schema
+                            '{selected_masking_database}_ENCRYPT',
+                            '{selected_masking_schema}'
+                        )
+                        """
+                        session.sql(sql_command).collect()
+                        st.success("✅ CREATE TABLES executed successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error executing CREATE TABLES: {str(e)}")
+                        success = False
+                # Insert a single audit record for the entire process
+                try:
+                    if success:
+                        audit_message = f"ENCRYPTION for {selected_masking_database}_ENCRYPT.{selected_masking_schema}"
+                        log_audit(audit_message, "Success", "encryption")
+                    else:
+                        audit_message = f"ENCRYPTION for {selected_masking_database}_ENCRYPT.{selected_masking_schema}"
+                        log_audit(audit_message, "Failure", "encryption")
+                except Exception as e:
+                    st.error(f"❌ Error logging audit: {str(e)}")
+
+                if success:
+                    st.success("✅ Completed all processes successfully!")
                 else:
-                    st.info("ℹ️ No encrypted columns found for validation.")
+                    st.warning("Some steps failed. Please review the errors.")
+            else:
+                st.warning("Please ensure all selections are made before running the masking process.")
+
+# Classifications App with Auto-Save
+if app_mode == "Classifications":
+    session = get_active_session()
+
+    # Main UI
+    app_mode_classification = st.sidebar.radio("Select Process", ["Home", "Classification edit and Submission"], index=0)
+
+    if app_mode_classification == "Home":
+        st.markdown('<h2 class="font">Classifications</h2>', unsafe_allow_html=True)
+        st.markdown('<p>This page is designed to assist you with classification editing and submission in Snowflake.</p>', unsafe_allow_html=True)
+       
+        st.subheader('Overview of Processes:')
+        st.markdown('<p>To review the classification report, you need to select a specific database and schema, then click on "Get Classification Report." </p>', unsafe_allow_html=True)
+        st.markdown('<p>Once the report is displayed, review the classifications based on the BU_APPROVAL_STATUS field. You can select options such as APPROVED, MASKED, or NO MASKING NEEDED.</p>', unsafe_allow_html=True)
+        st.markdown('<p><strong>The classification report now features auto-save functionality - your changes are automatically saved as you edit. No need to manually save!</strong></p>', unsafe_allow_html=True)
+        st.markdown('<p>After reviewing the entire classification report and making necessary edits, you can finally submit the report. Based on your review, a new classification report will be generated and stored in the DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_REPORT table.</p>', unsafe_allow_html=True)
+        st.markdown('<p>Note: Your edits are automatically saved, but the report must be officially submitted only once to complete the process. </p>', unsafe_allow_html=True)
+    
+    elif app_mode_classification == "Classification edit and Submission":
+        # Session state initialization
+        for key in ["report_fetched", "edited_df", "submitted", "confirm_submission", "last_save_time", "auto_save_key"]:
+            if key not in st.session_state:
+                if key == "edited_df":
+                    st.session_state[key] = None
+                elif key == "last_save_time":
+                    st.session_state[key] = 0
+                elif key == "auto_save_key":
+                    st.session_state[key] = 0
+                else:
+                    st.session_state[key] = False
+
+        # Helper functions
+        def fetch_databases():
+            session = get_active_session()
+            rows = session.sql("""
+                SELECT DATABASE_NAME FROM INFORMATION_SCHEMA.DATABASES 
+                WHERE DATABASE_NAME LIKE 'PROD_%' AND DATABASE_NAME NOT LIKE '%_MASKED%' AND DATABASE_NAME NOT LIKE '%_ENCRYPT%'
+            """).collect()
+            return [row[0] for row in rows]
+
+        def fetch_schemas(database):
+            session = get_active_session()
+            rows = session.sql(f"SELECT SCHEMA_NAME FROM {database}.INFORMATION_SCHEMA.SCHEMATA").collect()
+            return [row[0] for row in rows]
+
+        def fetch_classification_report(database, schema):
+            session = get_active_session()
+            query = f"""
+                SELECT * 
+                FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1
+                WHERE DATABASE_NAME = '{database}' 
+                  AND SCHEMA_NAME = '{schema}' 
+                  AND VERSION = (
+                      SELECT MAX(VERSION)
+                      FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1
+                      WHERE DATABASE_NAME = '{database}' 
+                        AND SCHEMA_NAME = '{schema}'
+                  )
+            """
+            return session.sql(query).collect()
+
+        def save_classification_report(df, database, schema, show_message=True):
+            session = get_active_session()
+            try:
+                values = []
+                for _, row in df.iterrows():
+                    # Handle potential None values and escape single quotes
+                    def safe_str(val):
+                        if val is None:
+                            return ''
+                        return str(val).replace("'", "''")
+                    
+                    values.append(f"""(
+                        '{safe_str(database)}', '{safe_str(schema)}', '{safe_str(row['CLASSIFICATION_OWNER'])}', '{safe_str(row['DATE'])}',
+                        '{safe_str(row['TABLE_NAME'])}', '{safe_str(row['COLUMN_NAME'])}', '{safe_str(row['CLASSIFICATION'])}',
+                        '{safe_str(row['HIPAA_CLASS'])}', '{safe_str(row['MASKED'])}', '{safe_str(row['BU_APPROVAL_STATUS'])}',
+                        '{safe_str(row['BU_COMMENTS'])}', '{safe_str(row['BU_ASSIGNEE'])}', '{safe_str(row['INFOSEC_APPROVAL_STATUS'])}',
+                        '{safe_str(row['INFOSEC_APPROVER'])}', '{safe_str(row['INFOSEC_COMMENTS'])}',
+                        {int(row['IS_ACTIVE']) if row['IS_ACTIVE'] is not None else 0},
+                        {int(row['VERSION']) if row['VERSION'] is not None else 1},
+                        {int(row['ID'])}
+                    )""")
+                values_str = ",\n".join(values)
+                merge_sql = f"""
+                    MERGE INTO DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1 AS target
+                    USING (
+                        SELECT * FROM VALUES
+                        {values_str}
+                        AS source (
+                            DATABASE_NAME, SCHEMA_NAME, CLASSIFICATION_OWNER, DATE,
+                            TABLE_NAME, COLUMN_NAME, CLASSIFICATION, HIPAA_CLASS,
+                            MASKED, BU_APPROVAL_STATUS, BU_COMMENTS, BU_ASSIGNEE,
+                            INFOSEC_APPROVAL_STATUS, INFOSEC_APPROVER, INFOSEC_COMMENTS,
+                            IS_ACTIVE, VERSION, ID
+                        )
+                    ) AS source
+                    ON target.ID = source.ID
+                    WHEN MATCHED THEN UPDATE SET
+                        DATE = source.DATE,
+                        DATABASE_NAME = source.DATABASE_NAME,
+                        SCHEMA_NAME = source.SCHEMA_NAME,
+                        TABLE_NAME = source.TABLE_NAME,
+                        COLUMN_NAME = source.COLUMN_NAME,
+                        CLASSIFICATION = source.CLASSIFICATION,
+                        HIPAA_CLASS = source.HIPAA_CLASS,
+                        MASKED = source.MASKED,
+                        BU_APPROVAL_STATUS = source.BU_APPROVAL_STATUS,
+                        BU_COMMENTS = source.BU_COMMENTS,
+                        BU_ASSIGNEE = source.BU_ASSIGNEE,
+                        INFOSEC_APPROVAL_STATUS = source.INFOSEC_APPROVAL_STATUS,
+                        INFOSEC_APPROVER = source.INFOSEC_APPROVER,
+                        INFOSEC_COMMENTS = source.INFOSEC_COMMENTS,
+                        IS_ACTIVE = source.IS_ACTIVE,
+                        CLASSIFICATION_OWNER = source.CLASSIFICATION_OWNER,
+                        VERSION = source.VERSION
+                    WHEN NOT MATCHED THEN INSERT (
+                        DATABASE_NAME, SCHEMA_NAME, CLASSIFICATION_OWNER, DATE,
+                        TABLE_NAME, COLUMN_NAME, CLASSIFICATION, HIPAA_CLASS,
+                        MASKED, BU_APPROVAL_STATUS, BU_COMMENTS, BU_ASSIGNEE,
+                        INFOSEC_APPROVAL_STATUS, INFOSEC_APPROVER, INFOSEC_COMMENTS,
+                        IS_ACTIVE, VERSION, ID
+                    )
+                    VALUES (
+                        source.DATABASE_NAME, source.SCHEMA_NAME, source.CLASSIFICATION_OWNER, source.DATE,
+                        source.TABLE_NAME, source.COLUMN_NAME, source.CLASSIFICATION, source.HIPAA_CLASS,
+                        source.MASKED, source.BU_APPROVAL_STATUS, source.BU_COMMENTS, source.BU_ASSIGNEE,
+                        source.INFOSEC_APPROVAL_STATUS, source.INFOSEC_APPROVER, source.INFOSEC_COMMENTS,
+                        source.IS_ACTIVE, source.VERSION, source.ID
+                    )
+                """
+                session.sql(merge_sql).collect()
+                st.session_state.last_save_time = time.time()
+                return True
+            except Exception as e:
+                if show_message:
+                    st.error(f"Error auto-saving classification report: {e}")
+                return False
+
+        def insert_raw_classification_details(database, schema, bu_name):
+            session = get_active_session()
+
+            # Define mapping for classification owner and HIPAA class
+            classification_mapping = {
+                "I&E Business Intelligence": ("IE_BU", "IE_PII"),
+                "PRICE": ("PRICE_BU", "PRICE_PII"),
+                "Marketing": ("MARKETING_BU", "MARKETING_PII"),
+                "ZDI Provider Intelligence": ("PROVIDER_BU", "PROVIDER_PII"),
+                "ZDI Member Intelligence": ("MEMBER_BU", "MEMBER_PII"),
+                "Payments Optimization": ("PAYMENTS_BU", "PAYMENTS_PII"),
+                "ZDI Data Science Engineer": ("DSE_BU", "DSE_PII"),
+                "ZEDI Claims & Price Intelligence": ("CPI_BU", "CPI_PII"),
+            }
+
+            # Get classification owner and HIPAA class based on bu_name
+            classification_owner, hipaa_class = classification_mapping.get(bu_name, (None, None))
+
+            if classification_owner is None or hipaa_class is None:
+                st.error("Invalid BU Name selected. Please select a valid BU.")
+                return False
+
+            # Determine the maximum version for the specific combination of database, schema, and classification owner
+            max_version_row = session.sql(f"""
+                SELECT MAX(VERSION) 
+                FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS 
+                WHERE DATABASE_NAME = '{database}' 
+                    AND SCHEMA_NAME = '{schema}' 
+                    AND CLASSIFICATION_OWNER = '{classification_owner}'
+            """).first()
+
+            max_version = max_version_row[0] if max_version_row[0] is not None else 0
+            new_version = max_version + 1  # Increment the version for the insert
+
+            fetch_sql = f"""
+                SELECT * 
+                FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1
+                WHERE DATABASE_NAME = '{database}' 
+                    AND SCHEMA_NAME = '{schema}' 
+                    AND VERSION = (
+                        SELECT MAX(VERSION)
+                        FROM DEV_DB_MANAGER.MASKING.CLASSIFICATION_REPORT_V1
+                        WHERE DATABASE_NAME = '{database}' 
+                            AND SCHEMA_NAME = '{schema}'
+                    )
+                    AND ((BU_APPROVAL_STATUS = 'APPROVED' AND MASKED = 'YES') 
+                    OR (BU_APPROVAL_STATUS = 'MASK' AND MASKED = 'NO'))
+            """
+            classification_details = session.sql(fetch_sql).collect()
+
+            if not classification_details:
+                st.warning("No classification details available for insertion.")
+                return False
+
+            insert_values = []
+            duplicate_count = 0  # Counter for duplicate records
+
+            for row in classification_details:
+                # Check for existing records to prevent duplicates
+                existing_record_check = session.sql(f"""
+                    SELECT COUNT(*) 
+                    FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS
+                    WHERE DATABASE_NAME = '{database}'
+                        AND SCHEMA_NAME = '{schema}'
+                        AND CLASSIFICATION_OWNER = '{classification_owner}'
+                        AND TABLE_NAME = '{row['TABLE_NAME']}'
+                        AND COLUMN_NAME = '{row['COLUMN_NAME']}'
+                        AND HIPAA_CLASS = '{hipaa_class}'
+                        AND BU_APPROVAL_STATUS = '{row['BU_APPROVAL_STATUS']}'
+                        AND BU_COMMENTS = '{row['BU_COMMENTS']}'
+                        AND BU_ASSIGNEE = '{row['BU_ASSIGNEE']}'
+                        AND INFOSEC_APPROVAL_STATUS = '{row['INFOSEC_APPROVAL_STATUS']}'
+                        AND INFOSEC_APPROVER = '{row['INFOSEC_APPROVER']}'
+                        AND INFOSEC_COMMENTS = '{row['INFOSEC_COMMENTS']}'
+                        AND IS_ACTIVE = TRUE
+                """).first()[0]
+
+                if existing_record_check > 0:
+                    duplicate_count += 1  # Increment the duplicate counter
+                    continue
+
+                max_import_id_row = session.sql("SELECT MAX(IMPORT_ID) FROM DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS").first()
+                max_import_id = max_import_id_row[0] if max_import_id_row[0] is not None else 0
+                new_import_id = max_import_id + 1
+
+                # Mark existing records as inactive
+                session.sql(f"""
+                    UPDATE DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS
+                    SET IS_ACTIVE = false
+                    WHERE DATABASE_NAME = '{database}'
+                        AND SCHEMA_NAME = '{schema}'
+                        AND CLASSIFICATION_OWNER = '{classification_owner}'
+                """).collect()
+
+                insert_values.append(f"""(
+                    {new_import_id}, '{row['DATE']}', '{database}', '{schema}', 
+                    '{row['TABLE_NAME']}', '{row['COLUMN_NAME']}', 'HIPAA', 
+                    '{hipaa_class}', '{row['BU_APPROVAL_STATUS']}', '{row['BU_COMMENTS']}', 
+                    '{row['BU_ASSIGNEE']}', '{row['INFOSEC_APPROVAL_STATUS']}', 
+                    '{row['INFOSEC_APPROVER']}', '{row['INFOSEC_COMMENTS']}', 
+                    true, '{classification_owner}', {new_version}
+                )""")
+
+            if insert_values:
+                values_str = ",\n".join(insert_values)
+                insert_sql = f"""
+                    INSERT INTO DEV_DB_MANAGER.MASKING.RAW_CLASSIFICATION_DETAILS (
+                        IMPORT_ID, DATE, DATABASE_NAME, SCHEMA_NAME, TABLE_NAME, COLUMN_NAME, 
+                        CLASSIFICATION, HIPAA_CLASS, BU_APPROVAL_STATUS, BU_COMMENTS, 
+                        BU_ASSIGNEE, INFOSEC_APPROVAL_STATUS, INFOSEC_APPROVER, 
+                        INFOSEC_COMMENTS, IS_ACTIVE, CLASSIFICATION_OWNER, VERSION
+                    ) VALUES {values_str}
+                """
+
+                try:
+                    session.sql(insert_sql).collect()
+                    return True
+                except Exception as e:
+                    st.error(f"Error inserting into RAW_CLASSIFICATION_DETAILS: {e}")
+                    return False
+            else:
+                # Show a consolidated duplicate message
+                if duplicate_count > 0:
+                    st.info(f"{duplicate_count} records already exist for the specified classification criteria. Skipping these entries.")
+                else:
+                    st.info("No new records to insert.")
+                return False
+
+        # Function to fetch distinct BU names
+        def get_bu_names():
+            session = get_active_session()
+            rows = session.sql("SELECT DISTINCT BU_NAME FROM DEV_DB_MANAGER.MASKING.CONSUMER").collect()
+            return [row[0] for row in rows]
+
+        # UI for classification report editing
+        st.title("Classification Report Editor")
+
+        database = st.selectbox("Select Database", fetch_databases())
+        if database:
+            schema = st.selectbox("Select Schema", fetch_schemas(database))
+            if schema and st.button("Get Classification Report"):
+                data = fetch_classification_report(database, schema)
+                if data:
+                    df = pd.DataFrame([row.as_dict() for row in data])
+                    # Get current user
+                    try:
+                        current_user = get_active_session().sql("SELECT CURRENT_USER()").collect()[0][0]
+                    except:
+                        current_user = get_active_session().get_current_user()
+                    # Replace BU_ASSIGNEE with current user
+                    df['BU_ASSIGNEE'] = current_user
+                    st.session_state.edited_df = df.copy()
+                    st.session_state.report_fetched = True
+                    st.session_state.auto_save_key += 1  # Increment key to reset data_editor
+                else:
+                    st.warning("No data found for the selected database and schema.")
+
+        # Editable DataFrame with auto-save
+        if st.session_state.report_fetched and st.session_state.edited_df is not None:
+            st.subheader("Edit Classification Report (Auto-Save Enabled)")
+            
+            # Display last save time
+            if st.session_state.last_save_time > 0:
+                last_save_str = time.strftime("%H:%M:%S", time.localtime(st.session_state.last_save_time))
+                st.caption(f"Last auto-saved at: {last_save_str}")
+
+            # Ensure the relevant columns are treated as categories with specific options
+            st.session_state.edited_df['BU_APPROVAL_STATUS'] = st.session_state.edited_df['BU_APPROVAL_STATUS'].astype('category')
+            st.session_state.edited_df['BU_APPROVAL_STATUS'] = st.session_state.edited_df['BU_APPROVAL_STATUS'].cat.set_categories(['MASK', 'APPROVED', 'NO MASKING NEEDED'])
+
+            st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'] = st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'].astype('category')
+            st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'] = st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'].cat.set_categories(['MASK', 'APPROVED', 'NO MASKING NEEDED'])
+
+            # Create the data editor with full screen height and auto-save
+            with st.container():
+                edited_df = st.data_editor(
+                    st.session_state.edited_df, 
+                    num_rows="dynamic", 
+                    use_container_width=True,
+                    height=600,  # Fixed height for better full-screen experience
+                    key=f"data_editor_{st.session_state.auto_save_key}"
+                )
+
+            # Auto-save functionality - check if data has changed
+            if not edited_df.equals(st.session_state.edited_df):
+                # Update session state with new data
+                st.session_state.edited_df = edited_df.copy()
+                
+                # Auto-save the changes
+                success = save_classification_report(edited_df, database, schema, show_message=False)
+                
+                if success:
+                    # Show a subtle auto-save indicator with fixed position
+                    st.markdown(
+                        '<div class="auto-save-status">✅ Auto-saved</div>',
+                        unsafe_allow_html=True
+                    )
+
+            st.subheader("Submit Classifications")
+            bu_name = st.selectbox("Select BU Name", get_bu_names())
+            if bu_name and st.button("Submit Classifications"):
+                success = insert_raw_classification_details(database, schema, bu_name)
+                if success:
+                    st.success("Classification details inserted successfully!")
