@@ -1232,7 +1232,7 @@ if app_mode == "Classifications":
     
     elif app_mode_classification == "Classification edit and Submission":
         # Session state initialization
-        for key in ["report_fetched", "edited_df", "submitted", "confirm_submission", "last_save_time", "auto_save_key"]:
+        for key in ["report_fetched", "edited_df", "submitted", "confirm_submission", "last_save_time", "auto_save_key", "save_status"]:
             if key not in st.session_state:
                 if key == "edited_df":
                     st.session_state[key] = None
@@ -1240,6 +1240,8 @@ if app_mode == "Classifications":
                     st.session_state[key] = 0
                 elif key == "auto_save_key":
                     st.session_state[key] = 0
+                elif key == "save_status":
+                    st.session_state[key] = ""
                 else:
                     st.session_state[key] = False
 
@@ -1273,7 +1275,7 @@ if app_mode == "Classifications":
             """
             return session.sql(query).collect()
 
-        def save_classification_report(df, database, schema, show_message=True):
+        def save_classification_report(df, database, schema):
             session = get_active_session()
             try:
                 values = []
@@ -1344,10 +1346,10 @@ if app_mode == "Classifications":
                 """
                 session.sql(merge_sql).collect()
                 st.session_state.last_save_time = time.time()
+                st.session_state.save_status = "success"
                 return True
             except Exception as e:
-                if show_message:
-                    st.error(f"Error auto-saving classification report: {e}")
+                st.session_state.save_status = f"error: {str(e)}"
                 return False
 
         def insert_raw_classification_details(database, schema, bu_name):
@@ -1504,6 +1506,7 @@ if app_mode == "Classifications":
                     st.session_state.edited_df = df.copy()
                     st.session_state.report_fetched = True
                     st.session_state.auto_save_key += 1  # Increment key to reset data_editor
+                    st.session_state.save_status = ""
                 else:
                     st.warning("No data found for the selected database and schema.")
 
@@ -1511,10 +1514,19 @@ if app_mode == "Classifications":
         if st.session_state.report_fetched and st.session_state.edited_df is not None:
             st.subheader("Edit Classification Report (Auto-Save Enabled)")
             
-            # Display last save time
-            if st.session_state.last_save_time > 0:
-                last_save_str = time.strftime("%H:%M:%S", time.localtime(st.session_state.last_save_time))
-                st.caption(f"Last auto-saved at: {last_save_str}")
+            # Display save status and last save time
+            status_col1, status_col2 = st.columns([2, 1])
+            with status_col1:
+                if st.session_state.save_status == "success" and st.session_state.last_save_time > 0:
+                    last_save_str = time.strftime("%H:%M:%S", time.localtime(st.session_state.last_save_time))
+                    st.success(f"✅ Auto-saved at: {last_save_str}", icon="💾")
+                elif st.session_state.save_status.startswith("error"):
+                    st.error(f"❌ Save failed: {st.session_state.save_status[7:]}")
+            
+            with status_col2:
+                if st.session_state.last_save_time > 0:
+                    last_save_str = time.strftime("%H:%M:%S", time.localtime(st.session_state.last_save_time))
+                    st.caption(f"Last saved: {last_save_str}")
 
             # Ensure the relevant columns are treated as categories with specific options
             st.session_state.edited_df['BU_APPROVAL_STATUS'] = st.session_state.edited_df['BU_APPROVAL_STATUS'].astype('category')
@@ -1523,30 +1535,29 @@ if app_mode == "Classifications":
             st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'] = st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'].astype('category')
             st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'] = st.session_state.edited_df['INFOSEC_APPROVAL_STATUS'].cat.set_categories(['MASK', 'APPROVED', 'NO MASKING NEEDED'])
 
-            # Create the data editor with full screen height and auto-save
-            with st.container():
-                edited_df = st.data_editor(
-                    st.session_state.edited_df, 
-                    num_rows="dynamic", 
-                    use_container_width=True,
-                    height=600,  # Fixed height for better full-screen experience
-                    key=f"data_editor_{st.session_state.auto_save_key}"
-                )
+            # Create the data editor with full screen height
+            edited_df = st.data_editor(
+                st.session_state.edited_df, 
+                num_rows="dynamic", 
+                use_container_width=True,
+                height=600,  # Fixed height for better full-screen experience
+                key=f"data_editor_{st.session_state.auto_save_key}"
+            )
 
-            # Auto-save functionality - check if data has changed
+            # Auto-save functionality - check if data has changed (without page refresh)
             if not edited_df.equals(st.session_state.edited_df):
                 # Update session state with new data
                 st.session_state.edited_df = edited_df.copy()
                 
-                # Auto-save the changes
-                success = save_classification_report(edited_df, database, schema, show_message=False)
+                # Auto-save the changes silently
+                save_success = save_classification_report(edited_df, database, schema)
                 
-                if success:
-                    # Show a subtle auto-save indicator with fixed position
-                    st.markdown(
-                        '<div class="auto-save-status">✅ Auto-saved</div>',
-                        unsafe_allow_html=True
-                    )
+                # Update save status without causing refresh
+                if save_success:
+                    st.session_state.save_status = "success"
+                    st.session_state.last_save_time = time.time()
+                else:
+                    st.session_state.save_status = "error"
 
             st.subheader("Submit Classifications")
             bu_name = st.selectbox("Select BU Name", get_bu_names())
