@@ -1,0 +1,247 @@
+{
+  "example_new_relic_applications_response": {
+    "applications": [
+      {
+        "id": 12345,
+        "name": "My Web App",
+        "language": "java",
+        "health_status": "green",
+        "reporting": true,
+        "last_reported_at": "2024-01-15T10:30:00Z",
+        "application_summary": {
+          "response_time": 250.5,
+          "throughput": 150.2,
+          "error_rate": 0.02,
+          "apdex_target": 0.5,
+          "apdex_score": 0.98
+        },
+        "end_user_summary": {
+          "response_time": 300.1,
+          "throughput": 145.8,
+          "apdex_target": 0.7,
+          "apdex_score": 0.95
+        },
+        "settings": {
+          "app_apdex_threshold": 0.5,
+          "end_user_apdex_threshold": 0.7,
+          "enable_real_user_monitoring": true,
+          "use_server_side_config": false
+        },
+        "links": {
+          "application_instances": [67890],
+          "servers": [],
+          "application_hosts": [11111, 22222]
+        }
+      },
+      {
+        "id": 54321,
+        "name": "Mobile API Service", 
+        "language": "nodejs",
+        "health_status": "yellow",
+        "reporting": true,
+        "last_reported_at": "2024-01-15T10:25:00Z",
+        "application_summary": {
+          "response_time": 180.3,
+          "throughput": 89.7,
+          "error_rate": 0.05,
+          "apdex_target": 0.4,
+          "apdex_score": 0.92
+        },
+        "end_user_summary": {
+          "response_time": 0,
+          "throughput": 0,
+          "apdex_target": 0,
+          "apdex_score": 0
+        },
+        "settings": {
+          "app_apdex_threshold": 0.4,
+          "end_user_apdex_threshold": 0,
+          "enable_real_user_monitoring": false,
+          "use_server_side_config": true
+        },
+        "links": {
+          "application_instances": [98765],
+          "servers": [33333],
+          "application_hosts": [44444]
+        }
+      }
+    ],
+    "meta": {
+      "count": 2,
+      "response_time": 45
+    }
+  },
+  
+  "example_new_relic_metrics_response": {
+    "metric_data": {
+      "from": "2024-01-15T09:00:00Z",
+      "to": "2024-01-15T10:00:00Z",
+      "metrics": [
+        {
+          "name": "Apdex",
+          "timeslices": [
+            {
+              "from": "2024-01-15T09:00:00Z",
+              "to": "2024-01-15T09:15:00Z", 
+              "values": {
+                "score": 0.98,
+                "satisfied": 145,
+                "tolerated": 2,
+                "frustrated": 1,
+                "count": 148,
+                "threshold": 0.5,
+                "threshold_min": 0.1
+              }
+            },
+            {
+              "from": "2024-01-15T09:15:00Z",
+              "to": "2024-01-15T09:30:00Z",
+              "values": {
+                "score": 0.97,
+                "satisfied": 142,
+                "tolerated": 3,
+                "frustrated": 2,
+                "count": 147,
+                "threshold": 0.5,
+                "threshold_min": 0.1
+              }
+            }
+          ]
+        },
+        {
+          "name": "HttpDispatcher",
+          "timeslices": [
+            {
+              "from": "2024-01-15T09:00:00Z",
+              "to": "2024-01-15T09:15:00Z",
+              "values": {
+                "average_response_time": 0.245,
+                "calls_per_minute": 89.2,
+                "call_count": 1338,
+                "min_response_time": 0.012,
+                "max_response_time": 2.156,
+                "average_exclusive_time": 0.156,
+                "average_value": 0.245,
+                "total_call_time_per_minute": 21.8,
+                "requests_per_minute": 89.2,
+                "standard_deviation": 0.134
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  "example_insights_query_response": {
+    "results": [
+      {
+        "events": [
+          {
+            "timestamp": 1705317000000,
+            "appName": "My Web App",
+            "name": "Controller/users/show",
+            "duration": 0.245,
+            "httpResponseCode": 200,
+            "userAgentName": "Chrome",
+            "userAgentVersion": "120.0",
+            "request.headers.userAgent": "Mozilla/5.0...",
+            "databaseDuration": 0.045,
+            "databaseCallCount": 3,
+            "gcCumulative": 0.012,
+            "memcacheHits": 2,
+            "memcacheMisses": 0
+          },
+          {
+            "timestamp": 1705317015000,
+            "appName": "My Web App", 
+            "name": "Controller/api/products",
+            "duration": 0.189,
+            "httpResponseCode": 200,
+            "userAgentName": "PostmanRuntime",
+            "userAgentVersion": "7.36.1",
+            "databaseDuration": 0.067,
+            "databaseCallCount": 5,
+            "gcCumulative": 0.008,
+            "memcacheHits": 1,
+            "memcacheMisses": 1
+          }
+        ]
+      }
+    ],
+    "performanceStats": {
+      "inspectedCount": 2,
+      "omittedCount": 0,
+      "matchCount": 2,
+      "wallClockTime": 12
+    },
+    "metadata": {
+      "eventTypes": ["Transaction"],
+      "eventType": "Transaction",
+      "openEnded": true,
+      "beginTime": "2024-01-15T09:30:00Z",
+      "endTime": "2024-01-15T09:31:00Z",
+      "beginTimeMillis": 1705317000000,
+      "endTimeMillis": 1705317060000,
+      "rawSince": "30 minutes ago",
+      "rawUntil": "now",
+      "rawCompareWith": "",
+      "guid": "abc123def456",
+      "routerGuid": "xyz789uvw012",
+      "messages": [],
+      "contents": [
+        {
+          "function": "events",
+          "limit": 1000,
+          "order": {
+            "timestamp": "DESC"
+          }
+        }
+      ]
+    }
+  },
+
+  "common_new_relic_endpoints": {
+    "applications": {
+      "url": "https://api.newrelic.com/v2/applications.json",
+      "description": "List all applications",
+      "headers": {
+        "X-Api-Key": "YOUR_API_KEY"
+      }
+    },
+    "application_metrics": {
+      "url": "https://api.newrelic.com/v2/applications/{application_id}/metrics/data.json",
+      "description": "Get metrics for specific application",
+      "parameters": {
+        "names[]": "Apdex,HttpDispatcher,Errors/all",
+        "from": "2024-01-15T09:00:00Z",
+        "to": "2024-01-15T10:00:00Z",
+        "summarize": "true"
+      }
+    },
+    "insights_query": {
+      "url": "https://insights-api.newrelic.com/v1/accounts/{account_id}/query",
+      "description": "NRQL query for custom data",
+      "parameters": {
+        "nrql": "SELECT * FROM Transaction WHERE appName = 'My Web App' SINCE 30 minutes ago"
+      },
+      "headers": {
+        "X-Query-Key": "YOUR_INSIGHTS_KEY"
+      }
+    },
+    "infrastructure_hosts": {
+      "url": "https://infra-api.newrelic.com/v2/hosts",
+      "description": "Get infrastructure hosts data",
+      "headers": {
+        "X-Api-Key": "YOUR_API_KEY"
+      }
+    },
+    "alerts_violations": {
+      "url": "https://api.newrelic.com/v2/alerts_violations.json",
+      "description": "Get alert violations",
+      "parameters": {
+        "only_open": "true"
+      }
+    }
+  }
+}
