@@ -19,11 +19,13 @@
 
 ### 1. InvokeHTTP Processor Configuration
 
+#### Option A: Standard REST API (GET - No Body)
 ```yaml
 Processor: InvokeHTTP
 Properties:
   - HTTP Method: GET
   - Remote URL: https://api.newrelic.com/v2/applications.json
+  - Send Message Body: false
   - Request Content-Type: application/json
   - Accept Content-Type: application/json
   - Connection Timeout: 30 sec
@@ -36,6 +38,56 @@ Dynamic Properties:
 Scheduling:
   - Run Schedule: 0 */15 * * * ?  # Every 15 minutes
   - Concurrent Tasks: 1
+```
+
+#### Option B: GraphQL NerdGraph API (POST - With Body)
+```yaml
+Processor: InvokeHTTP
+Properties:
+  - HTTP Method: POST
+  - Remote URL: https://api.newrelic.com/graphql
+  - Send Message Body: true
+  - Content-Type: application/json
+  - Connection Timeout: 30 sec
+  - Read Timeout: 60 sec
+  
+Dynamic Properties:
+  - API-Key: ${newrelic.api.key}
+  - Content-Type: application/json
+  - User-Agent: NiFi-NewRelic-Connector
+
+Scheduling:
+  - Run Schedule: 0 */15 * * * ?  # Every 15 minutes
+  - Concurrent Tasks: 1
+
+Body Configuration:
+  - Add ReplaceText processor before InvokeHTTP to generate GraphQL query body
+```
+
+#### Option C: NRQL Insights API (POST - With Body)
+```yaml
+Processor: InvokeHTTP
+Properties:
+  - HTTP Method: POST
+  - Remote URL: https://insights-api.newrelic.com/v1/accounts/${newrelic.account.id}/query
+  - Send Message Body: true
+  - Content-Type: application/json
+  - Connection Timeout: 30 sec
+  - Read Timeout: 60 sec
+  
+Dynamic Properties:
+  - X-Query-Key: ${newrelic.query.key}
+  - Content-Type: application/json
+  - User-Agent: NiFi-NewRelic-Connector
+
+Scheduling:
+  - Run Schedule: 0 */15 * * * ?  # Every 15 minutes
+  - Concurrent Tasks: 1
+
+Body Example:
+{
+  "nrql": "SELECT average(duration), count(*) FROM Transaction WHERE appName = 'MyApp' SINCE 1 hour ago TIMESERIES"
+}
 ```
 
 ### 2. EvaluateJsonPath Processor (Optional - for metadata extraction)
