@@ -1,0 +1,188 @@
+{
+  "alternative_workflow": {
+    "description": "Alternative workflow without ExtractEmailAttachments processor",
+    "processors": {
+      "ConsumeIMAP": {
+        "type": "org.apache.nifi.processors.email.ConsumeIMAP",
+        "properties": {
+          "Host": "imap.gmail.com",
+          "Port": "993",
+          "Username": "skishore.sanchina@gmail.com",
+          "Password": "your-gmail-app-password",
+          "Folder": "INBOX",
+          "Fetch Size": "10",
+          "Delete Messages": "false",
+          "Mark Messages as Read": "true",
+          "Use SSL": "true",
+          "Connection timeout": "30 sec"
+        },
+        "scheduling": {
+          "strategy": "TIMER_DRIVEN",
+          "period": "30 sec",
+          "concurrent_tasks": 1
+        },
+        "description": "Consumes emails from Gmail IMAP server"
+      },
+      "SplitEmail": {
+        "type": "org.apache.nifi.processors.email.SplitEmail",
+        "properties": {
+          "Split Strategy": "Split Attachments",
+          "Include Original Message": "false"
+        },
+        "auto_terminated_relationships": ["original"],
+        "description": "Splits email into individual attachments"
+      },
+      "RouteOnAttribute_CSVFilter": {
+        "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+        "properties": {
+          "Routing Strategy": "Route to Property name",
+          "csv_files": "${filename:endsWith('.csv'):or(${filename:endsWith('.CSV')})}"
+        },
+        "auto_terminated_relationships": ["unmatched"],
+        "description": "Routes only CSV files for processing"
+      },
+      "ExtractContent": {
+        "type": "org.apache.nifi.processors.standard.ExtractContent",
+        "properties": {
+          "Extract Mode": "Extract Content"
+        },
+        "description": "Extracts content from CSV attachments"
+      },
+      "PutSnowflakeInternalStageFile": {
+        "type": "org.apache.nifi.processors.snowflake.PutSnowflakeInternalStageFile",
+        "properties": {
+          "Account": "your-account.snowflakecomputing.com",
+          "Username": "your-snowflake-username",
+          "Password": "your-snowflake-password",
+          "Database": "DEMO_DB",
+          "Schema": "PUBLIC",
+          "Warehouse": "COMPUTE_WH",
+          "Role": "SYSADMIN",
+          "Authentication Type": "Username/Password",
+          "Stage Name": "@%EMPLOYEE_DATA",
+          "Connection Timeout": "30 sec",
+          "Max Wait Time": "300 sec"
+        },
+        "scheduling": {
+          "strategy": "EVENT_DRIVEN",
+          "concurrent_tasks": 2
+        },
+        "description": "Uploads CSV files to Snowflake internal stage"
+      },
+      "ExecuteSQL": {
+        "type": "org.apache.nifi.processors.standard.ExecuteSQL",
+        "properties": {
+          "Database Connection Pooling Service": "SnowflakeConnectionPool",
+          "SQL select query": "COPY INTO DEMO_DB.PUBLIC.EMPLOYEE_DATA FROM @%EMPLOYEE_DATA FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1 FIELD_DELIMITER = ',') PURGE = TRUE;"
+        },
+        "scheduling": {
+          "strategy": "EVENT_DRIVEN",
+          "concurrent_tasks": 1
+        },
+        "description": "Executes SQL to load data from stage to table"
+      }
+    },
+    "connections": [
+      {
+        "source": "ConsumeIMAP",
+        "destination": "SplitEmail",
+        "relationships": ["success"]
+      },
+      {
+        "source": "SplitEmail",
+        "destination": "RouteOnAttribute_CSVFilter",
+        "relationships": ["attachment"]
+      },
+      {
+        "source": "RouteOnAttribute_CSVFilter",
+        "destination": "ExtractContent",
+        "relationships": ["csv_files"]
+      },
+      {
+        "source": "ExtractContent",
+        "destination": "PutSnowflakeInternalStageFile",
+        "relationships": ["success"]
+      },
+      {
+        "source": "PutSnowflakeInternalStageFile",
+        "destination": "ExecuteSQL",
+        "relationships": ["success"]
+      }
+    ],
+    "controller_services": {
+      "SnowflakeConnectionPool": {
+        "type": "org.apache.nifi.dbcp.DBCPConnectionPool",
+        "properties": {
+          "Database Connection URL": "jdbc:snowflake://your-account.snowflakecomputing.com",
+          "Database Driver Class Name": "net.snowflake.client.jdbc.SnowflakeDriver",
+          "Database User": "your-snowflake-username",
+          "Password": "your-snowflake-password",
+          "Max Total Connections": "8",
+          "Max Idle Connections": "8",
+          "Min Idle Connections": "0",
+          "Max Wait Time": "5000",
+          "Validation Query": "SELECT 1"
+        }
+      }
+    }
+  },
+  "workflow_2": {
+    "description": "Simpler workflow using ConsumeIMAP + RouteOnAttribute",
+    "processors": {
+      "ConsumeIMAP": {
+        "type": "org.apache.nifi.processors.email.ConsumeIMAP",
+        "properties": {
+          "Host": "imap.gmail.com",
+          "Port": "993",
+          "Username": "skishore.sanchina@gmail.com",
+          "Password": "your-gmail-app-password",
+          "Folder": "INBOX",
+          "Fetch Size": "10",
+          "Delete Messages": "false",
+          "Mark Messages as Read": "true",
+          "Use SSL": "true",
+          "Connection timeout": "30 sec"
+        },
+        "scheduling": {
+          "strategy": "TIMER_DRIVEN",
+          "period": "30 sec",
+          "concurrent_tasks": 1
+        }
+      },
+      "RouteOnAttribute_EmailFilter": {
+        "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+        "properties": {
+          "Routing Strategy": "Route to Property name",
+          "has_csv_attachment": "${email.attachments:contains('.csv'):or(${email.attachments:contains('.CSV')})}"
+        },
+        "auto_terminated_relationships": ["unmatched"]
+      },
+      "PutSnowflakeInternalStageFile": {
+        "type": "org.apache.nifi.processors.snowflake.PutSnowflakeInternalStageFile",
+        "properties": {
+          "Account": "your-account.snowflakecomputing.com",
+          "Username": "your-snowflake-username",
+          "Password": "your-snowflake-password",
+          "Database": "DEMO_DB",
+          "Schema": "PUBLIC",
+          "Warehouse": "COMPUTE_WH",
+          "Role": "SYSADMIN",
+          "Authentication Type": "Username/Password",
+          "Stage Name": "@%EMPLOYEE_DATA"
+        }
+      }
+    },
+    "connections": [
+      {
+        "source": "ConsumeIMAP",
+        "destination": "RouteOnAttribute_EmailFilter",
+        "relationships": ["success"]
+      },
+      {
+        "source": "RouteOnAttribute_EmailFilter",
+        "destination": "PutSnowflakeInternalStageFile",
+        "relationships": ["has_csv_attachment"]
+      }
+    ]
+  }
+}
