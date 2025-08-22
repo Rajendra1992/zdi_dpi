@@ -1,0 +1,148 @@
+{
+  "processors": {
+    "ConsumeIMAP": {
+      "type": "org.apache.nifi.processors.email.ConsumeIMAP",
+      "properties": {
+        "Host": "imap.gmail.com",
+        "Port": "993",
+        "Username": "skishore.sanchina@gmail.com",
+        "Password": "your-gmail-app-password",
+        "Folder": "INBOX",
+        "Fetch Size": "10",
+        "Delete Messages": "false",
+        "Mark Messages as Read": "true",
+        "Use SSL": "true",
+        "Connection timeout": "30 sec"
+      },
+      "scheduling": {
+        "strategy": "TIMER_DRIVEN",
+        "period": "30 sec",
+        "concurrent_tasks": 1
+      },
+      "auto_terminated_relationships": [],
+      "description": "Consumes emails from Gmail IMAP server"
+    },
+    "ExtractEmailAttachments": {
+      "type": "org.apache.nifi.processors.email.ExtractEmailAttachments",
+      "properties": {
+        "Attachment Filter": ".*\\.csv$",
+        "Extract Attachments Only": "true",
+        "Include Original Message": "false",
+        "Attachment Name Pattern": ".*",
+        "Attachment Size Limit": "100 MB"
+      },
+      "auto_terminated_relationships": ["original"],
+      "description": "Extracts CSV attachments from email messages"
+    },
+    "RouteOnAttribute": {
+      "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+      "properties": {
+        "Routing Strategy": "Route to Property name",
+        "valid_csv": "${filename:endsWith('.csv')}"
+      },
+      "auto_terminated_relationships": ["unmatched"],
+      "description": "Routes only CSV files for processing"
+    },
+    "PutSnowflakeInternalStageFile": {
+      "type": "org.apache.nifi.processors.snowflake.PutSnowflakeInternalStageFile",
+      "properties": {
+        "Account": "your-account.snowflakecomputing.com",
+        "Username": "your-snowflake-username",
+        "Password": "your-snowflake-password",
+        "Database": "DEMO_DB",
+        "Schema": "PUBLIC",
+        "Warehouse": "COMPUTE_WH",
+        "Role": "SYSADMIN",
+        "Authentication Type": "Username/Password",
+        "Stage Name": "@%EMPLOYEE_DATA",
+        "Connection Timeout": "30 sec",
+        "Max Wait Time": "300 sec"
+      },
+      "scheduling": {
+        "strategy": "EVENT_DRIVEN",
+        "concurrent_tasks": 2
+      },
+      "auto_terminated_relationships": [],
+      "description": "Uploads files to Snowflake internal stage"
+    },
+    "ExecuteSQL": {
+      "type": "org.apache.nifi.processors.standard.ExecuteSQL",
+      "properties": {
+        "Database Connection Pooling Service": "SnowflakeConnectionPool",
+        "SQL select query": "COPY INTO DEMO_DB.PUBLIC.EMPLOYEE_DATA FROM @%EMPLOYEE_DATA FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1 FIELD_DELIMITER = ',') PURGE = TRUE;"
+      },
+      "scheduling": {
+        "strategy": "EVENT_DRIVEN",
+        "concurrent_tasks": 1
+      },
+      "auto_terminated_relationships": [],
+      "description": "Executes SQL to load data from stage to table"
+    }
+  },
+  "connections": [
+    {
+      "source": "ConsumeIMAP",
+      "destination": "ExtractEmailAttachments",
+      "relationships": ["success"]
+    },
+    {
+      "source": "ExtractEmailAttachments",
+      "destination": "RouteOnAttribute",
+      "relationships": ["attachment"]
+    },
+    {
+      "source": "RouteOnAttribute",
+      "destination": "PutSnowflakeInternalStageFile",
+      "relationships": ["valid_csv"]
+    },
+    {
+      "source": "PutSnowflakeInternalStageFile",
+      "destination": "ExecuteSQL",
+      "relationships": ["success"]
+    }
+  ],
+  "controller_services": {
+    "SnowflakeConnectionPool": {
+      "type": "org.apache.nifi.dbcp.DBCPConnectionPool",
+      "properties": {
+        "Database Connection URL": "jdbc:snowflake://your-account.snowflakecomputing.com",
+        "Database Driver Class Name": "net.snowflake.client.jdbc.SnowflakeDriver",
+        "Database User": "your-snowflake-username",
+        "Password": "your-snowflake-password",
+        "Max Total Connections": "8",
+        "Max Idle Connections": "8",
+        "Min Idle Connections": "0",
+        "Max Wait Time": "5000",
+        "Validation Query": "SELECT 1"
+      }
+    }
+  },
+  "alternative_configurations": {
+    "ExtractEmailAttachments_Alt1": {
+      "properties": {
+        "attachment-filter": ".*\\.csv$",
+        "extract-attachments-only": "true",
+        "include-original-message": "false"
+      }
+    },
+    "ExtractEmailAttachments_Alt2": {
+      "properties": {
+        "AttachmentFilter": ".*\\.csv$",
+        "ExtractAttachmentsOnly": "true",
+        "IncludeOriginalMessage": "false"
+      }
+    },
+    "RouteOnAttribute_Alt1": {
+      "properties": {
+        "Routing Strategy": "Route to Property name",
+        "valid_csv": "${filename:contains('.csv')}"
+      }
+    },
+    "RouteOnAttribute_Alt2": {
+      "properties": {
+        "Routing Strategy": "Route to Property name",
+        "valid_csv": "true"
+      }
+    }
+  }
+}
