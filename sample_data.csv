@@ -1,0 +1,11 @@
+employee_id,first_name,last_name,email,department,hire_date,salary,status
+1001,John,Doe,john.doe@company.com,Engineering,2023-01-15,75000,Active
+1002,Jane,Smith,jane.smith@company.com,Marketing,2023-02-20,65000,Active
+1003,Mike,Johnson,mike.johnson@company.com,Sales,2023-03-10,70000,Active
+1004,Sarah,Wilson,sarah.wilson@company.com,HR,2023-04-05,60000,Active
+1005,David,Brown,david.brown@company.com,Finance,2023-05-12,72000,Active
+1006,Lisa,Davis,lisa.davis@company.com,Engineering,2023-06-18,78000,Active
+1007,Tom,Miller,tom.miller@company.com,Operations,2023-07-22,68000,Active
+1008,Amy,Garcia,amy.garcia@company.com,Marketing,2023-08-14,63000,Active
+1009,Chris,Martinez,chris.martinez@company.com,Sales,2023-09-30,71000,Active
+1010,Emma,Anderson,emma.anderson@company.com,IT,2023-10-25,76000,Active

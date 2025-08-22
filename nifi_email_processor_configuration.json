@@ -1,0 +1,141 @@
+{
+  "processors": {
+    "GetEmail": {
+      "type": "org.apache.nifi.processors.email.GetEmail",
+      "properties": {
+        "Host": "${email.host}",
+        "Port": "${email.port}",
+        "Username": "${email.username}",
+        "Password": "${email.password}",
+        "Folder": "INBOX",
+        "Fetch Size": "10",
+        "Delete Messages": "false",
+        "Connection timeout": "30 sec",
+        "Mark Messages as Read": "true",
+        "Should Mark Read": "true",
+        "Use SSL": "true",
+        "Protocol": "IMAPS"
+      },
+      "scheduling": {
+        "strategy": "TIMER_DRIVEN",
+        "period": "30 sec",
+        "concurrent_tasks": 1
+      },
+      "auto_terminated_relationships": [],
+      "description": "Retrieves emails from configured email server"
+    },
+    "ExtractEmailAttachments": {
+      "type": "org.apache.nifi.processors.email.ExtractEmailAttachments",
+      "properties": {
+        "Attachment Filter": ".*\\.(csv|CSV)$",
+        "Extract Attachments Only": "true"
+      },
+      "auto_terminated_relationships": ["original"],
+      "description": "Extracts CSV attachments from email messages"
+    },
+    "RouteOnAttribute_FileValidation": {
+      "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+      "properties": {
+        "Routing Strategy": "Route to Property name",
+        "csv_files": "${filename:endsWith('.csv'):or(${filename:endsWith('.CSV')})}"
+      },
+      "auto_terminated_relationships": ["unmatched"],
+      "description": "Routes only CSV files for processing"
+    },
+    "UpdateAttribute_AddMetadata": {
+      "type": "org.apache.nifi.processors.attributes.UpdateAttribute",
+      "properties": {
+        "processed_timestamp": "${now():format('yyyy-MM-dd HH:mm:ss')}",
+        "source_system": "email_processor",
+        "file_size": "${fileSize}",
+        "original_filename": "${filename}",
+        "snowflake_table": "EMPLOYEE_DATA",
+        "snowflake_schema": "PUBLIC",
+        "snowflake_database": "DEMO_DB"
+      },
+      "description": "Adds processing metadata to flowfiles"
+    },
+    "ConvertRecord_CSVToJSON": {
+      "type": "org.apache.nifi.processors.standard.ConvertRecord",
+      "properties": {
+        "Record Reader": "CSVReader",
+        "Record Writer": "JsonRecordSetWriter",
+        "Include Zero Record FlowFiles": "false"
+      },
+      "controller_services": {
+        "CSVReader": {
+          "type": "org.apache.nifi.csv.CSVReader",
+          "properties": {
+            "Schema Access Strategy": "Infer Schema",
+            "CSV Format": "RFC 4180",
+            "Value Separator": ",",
+            "Skip Header Line": "true",
+            "Quote Character": "\"",
+            "Escape Character": "\\",
+            "Comment Marker": "#",
+            "Null String": "",
+            "Trim Fields": "true"
+          }
+        },
+        "JsonRecordSetWriter": {
+          "type": "org.apache.nifi.json.JsonRecordSetWriter",
+          "properties": {
+            "Schema Write Strategy": "no-schema",
+            "Schema Access Strategy": "Inherit Record Schema",
+            "Pretty Print JSON": "false",
+            "Suppress Null Values": "Never Suppress"
+          }
+        }
+      },
+      "description": "Converts CSV records to JSON format for Snowflake processing"
+    }
+  },
+  "connections": [
+    {
+      "source": "GetEmail",
+      "destination": "ExtractEmailAttachments",
+      "relationships": ["success"]
+    },
+    {
+      "source": "ExtractEmailAttachments", 
+      "destination": "RouteOnAttribute_FileValidation",
+      "relationships": ["attachment"]
+    },
+    {
+      "source": "RouteOnAttribute_FileValidation",
+      "destination": "UpdateAttribute_AddMetadata", 
+      "relationships": ["csv_files"]
+    },
+    {
+      "source": "UpdateAttribute_AddMetadata",
+      "destination": "ConvertRecord_CSVToJSON",
+      "relationships": ["success"]
+    }
+  ],
+  "error_handling": {
+    "LogAttribute_Errors": {
+      "type": "org.apache.nifi.processors.standard.LogAttribute",
+      "properties": {
+        "Log Level": "ERROR",
+        "Log Payload": "true",
+        "Attributes to Log": "filename,email.from,email.subject,error.message",
+        "Log prefix": "EMAIL_PROCESSING_ERROR: "
+      }
+    },
+    "PutEmail_Notifications": {
+      "type": "org.apache.nifi.processors.standard.PutEmail",
+      "properties": {
+        "SMTP Hostname": "${smtp.host}",
+        "SMTP Port": "${smtp.port}",
+        "SMTP Username": "${smtp.username}",
+        "SMTP Password": "${smtp.password}",
+        "SMTP Auth": "true",
+        "SMTP TLS": "true",
+        "From": "${notification.from.email}",
+        "To": "${notification.to.email}",
+        "Subject": "Snowflake OpenFlow Processing Error - ${filename}",
+        "Message": "Error processing file: ${filename}\nFrom: ${email.from}\nSubject: ${email.subject}\nError: ${error.message}\nTimestamp: ${processed_timestamp}"
+      }
+    }
+  }
+}
