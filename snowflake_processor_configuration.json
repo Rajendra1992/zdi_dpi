@@ -1,0 +1,152 @@
+{
+  "snowflake_processors": {
+    "PutSnowflake": {
+      "type": "org.apache.nifi.snowflake.processors.PutSnowflake",
+      "properties": {
+        "Account": "${snowflake.account}",
+        "Username": "${snowflake.username}",
+        "Password": "${snowflake.password}",
+        "Database": "${snowflake_database}",
+        "Schema": "${snowflake_schema}",
+        "Table": "${snowflake_table}",
+        "Warehouse": "${snowflake.warehouse}",
+        "Role": "${snowflake.role}",
+        "Authentication Type": "Username/Password",
+        "Connection Timeout": "30 sec",
+        "Max Wait Time": "300 sec",
+        "Batch Size": "1000",
+        "Create Table": "false",
+        "Table Structure": "INFER_FROM_RECORDS"
+      },
+      "scheduling": {
+        "strategy": "EVENT_DRIVEN",
+        "concurrent_tasks": 2
+      },
+      "description": "Loads JSON records into Snowflake table"
+    },
+    "Alternative_PutS3Object": {
+      "type": "org.apache.nifi.processors.aws.s3.PutS3Object",
+      "properties": {
+        "Bucket": "${s3.staging.bucket}",
+        "Object Key": "snowflake-staging/${snowflake_database}/${snowflake_schema}/${snowflake_table}/${uuid}_${filename}",
+        "AWS Credentials Provider service": "AWSCredentialsProviderControllerService",
+        "Region": "${aws.region}",
+        "Storage Class": "STANDARD",
+        "Content Type": "application/json",
+        "Server Side Encryption": "AES256"
+      },
+      "description": "Alternative: Stage files in S3 for bulk loading via Snowflake COPY command"
+    },
+    "ExecuteSQL_SnowflakeCopy": {
+      "type": "org.apache.nifi.processors.standard.ExecuteSQL",
+      "properties": {
+        "Database Connection Pooling Service": "SnowflakeConnectionPool",
+        "SQL select query": "COPY INTO ${snowflake_database}.${snowflake_schema}.${snowflake_table} FROM @${snowflake.stage}/${uuid}_${filename} FILE_FORMAT = (TYPE = 'JSON') ON_ERROR = 'CONTINUE'"
+      },
+      "description": "Executes Snowflake COPY command for bulk loading from S3"
+    }
+  },
+  "controller_services": {
+    "SnowflakeConnectionPool": {
+      "type": "org.apache.nifi.dbcp.DBCPConnectionPool",
+      "properties": {
+        "Database Connection URL": "jdbc:snowflake://${snowflake.account}.snowflakecomputing.com/?warehouse=${snowflake.warehouse}&db=${snowflake_database}&schema=${snowflake_schema}",
+        "Database Driver Class Name": "net.snowflake.client.jdbc.SnowflakeDriver",
+        "Database User": "${snowflake.username}",
+        "Password": "${snowflake.password}",
+        "Max Wait Time": "500 millis",
+        "Max Total Connections": "8",
+        "Validation Query": "SELECT 1"
+      }
+    },
+    "AWSCredentialsProviderControllerService": {
+      "type": "org.apache.nifi.processors.aws.credentials.provider.service.AWSCredentialsProviderControllerService",
+      "properties": {
+        "default-credentials": "true",
+        "Access Key": "${aws.access.key}",
+        "Secret Key": "${aws.secret.key}",
+        "Region": "${aws.region}"
+      }
+    }
+  },
+  "data_validation": {
+    "ValidateRecord": {
+      "type": "org.apache.nifi.processors.standard.ValidateRecord",
+      "properties": {
+        "Record Reader": "JsonTreeReader",
+        "Record Writer": "JsonRecordSetWriter", 
+        "Schema Access Strategy": "Use String Property",
+        "Schema Text": "{\"type\":\"record\",\"name\":\"employee\",\"fields\":[{\"name\":\"employee_id\",\"type\":\"int\"},{\"name\":\"first_name\",\"type\":\"string\"},{\"name\":\"last_name\",\"type\":\"string\"},{\"name\":\"email\",\"type\":\"string\"},{\"name\":\"department\",\"type\":\"string\"},{\"name\":\"hire_date\",\"type\":\"string\"},{\"name\":\"salary\",\"type\":\"int\"},{\"name\":\"status\",\"type\":\"string\"}]}",
+        "Allow Extra Fields": "true",
+        "Strict Type Checking": "false"
+      },
+      "relationships": {
+        "valid": "Continue to Snowflake",
+        "invalid": "Log errors and notify"
+      }
+    }
+  },
+  "snowflake_table_ddl": {
+    "employee_data_table": "CREATE OR REPLACE TABLE DEMO_DB.PUBLIC.EMPLOYEE_DATA (EMPLOYEE_ID INTEGER, FIRST_NAME VARCHAR(100), LAST_NAME VARCHAR(100), EMAIL VARCHAR(200), DEPARTMENT VARCHAR(100), HIRE_DATE DATE, SALARY INTEGER, STATUS VARCHAR(50), PROCESSED_TIMESTAMP TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(), SOURCE_SYSTEM VARCHAR(100), FILE_SIZE INTEGER, ORIGINAL_FILENAME VARCHAR(500))"
+  },
+  "monitoring": {
+    "LogAttribute_Success": {
+      "type": "org.apache.nifi.processors.standard.LogAttribute",
+      "properties": {
+        "Log Level": "INFO",
+        "Log Payload": "false",
+        "Attributes to Log": "record.count,snowflake_table,processed_timestamp,file_size,original_filename",
+        "Log prefix": "SNOWFLAKE_LOAD_SUCCESS: "
+      }
+    },
+    "LogAttribute_Failure": {
+      "type": "org.apache.nifi.processors.standard.LogAttribute", 
+      "properties": {
+        "Log Level": "ERROR",
+        "Log Payload": "true",
+        "Attributes to Log": "snowflake.error,record.count,snowflake_table,original_filename",
+        "Log prefix": "SNOWFLAKE_LOAD_FAILURE: "
+      }
+    }
+  },
+  "flow_connections": [
+    {
+      "source": "ConvertRecord_CSVToJSON",
+      "destination": "ValidateRecord",
+      "relationships": ["success"]
+    },
+    {
+      "source": "ValidateRecord",
+      "destination": "PutSnowflake",
+      "relationships": ["valid"]
+    },
+    {
+      "source": "PutSnowflake",
+      "destination": "LogAttribute_Success",
+      "relationships": ["success"]
+    },
+    {
+      "source": "PutSnowflake",
+      "destination": "LogAttribute_Failure",
+      "relationships": ["failure"]
+    },
+    {
+      "source": "ValidateRecord",
+      "destination": "LogAttribute_Failure",
+      "relationships": ["invalid"]
+    }
+  ],
+  "environment_variables": {
+    "snowflake.account": "your_snowflake_account",
+    "snowflake.username": "your_username",
+    "snowflake.password": "your_password",
+    "snowflake.warehouse": "COMPUTE_WH",
+    "snowflake.role": "ACCOUNTADMIN",
+    "snowflake_database": "DEMO_DB",
+    "snowflake_schema": "PUBLIC",
+    "snowflake_table": "EMPLOYEE_DATA",
+    "aws.region": "us-east-1",
+    "s3.staging.bucket": "your-snowflake-staging-bucket",
+    "snowflake.stage": "your_snowflake_stage"
+  }
+}
