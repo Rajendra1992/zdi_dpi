@@ -28,7 +28,10 @@
       "type": "org.apache.nifi.processors.email.ExtractEmailAttachments",
       "properties": {
         "Attachment Filter": ".*\\.(csv|CSV)$",
-        "Extract Attachments Only": "true"
+        "Extract Attachments Only": "true",
+        "Include Original Message": "false",
+        "Attachment Name Pattern": ".*",
+        "Attachment Size Limit": "100 MB"
       },
       "auto_terminated_relationships": ["original"],
       "description": "Extracts CSV attachments from email messages"
